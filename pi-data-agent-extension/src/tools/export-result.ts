@@ -17,6 +17,7 @@ import { basename, join, resolve, normalize } from "node:path";
 import { statSync } from "node:fs";
 import type { ToolContext, ToolRegisterParams } from "./tool-context.js";
 import { executeWithRecovery, recoveryResultToToolResult } from "../error-recovery.js";
+import { resolveConfirmGate } from "../security.js";
 
 /** export-result 参数 */
 const ExportResultParams = Type.Object({
@@ -118,13 +119,19 @@ export function createExportResultTool(params: ToolRegisterParams): ToolDefiniti
         };
       }
 
-      // 5. 确认写操作（autoConfirmWrite=false 时）
-      if (!rt.config.autoConfirmWrite && ctx.ui) {
-        const confirmed = await ctx.ui.confirm(
-          "Export Result",
-          `Export query results to: ${outputPath}`,
-          { timeout: 30000 }
-        );
+      // 5. 确认写操作（fail-closed：无 UI 且未显式配置 autoConfirmWrite 时直接拒绝）
+      const gate = resolveConfirmGate(`Export query results to: ${outputPath}`, {
+        autoConfirmWrite: rt.config.autoConfirmWrite,
+        hasUi: Boolean(ctx.ui),
+      });
+      if (gate.action === "block") {
+        return {
+          content: [{ type: "text", text: `Security blocked: ${gate.reason}` }],
+          details: { toolName: "export_result", blocked: true, reason: gate.reason },
+        };
+      }
+      if (gate.action === "confirm") {
+        const confirmed = await ctx.ui.confirm("Export Result", gate.confirmMessage, { timeout: 30000 });
         if (!confirmed) {
           return {
             content: [{ type: "text", text: "Operation cancelled by user." }],

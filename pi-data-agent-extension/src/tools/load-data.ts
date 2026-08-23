@@ -22,6 +22,7 @@ import * as XLSX from "xlsx";
 import type { ToolContext, ToolRegisterParams } from "./tool-context.js";
 import type { TableOverview } from "../types.js";
 import { formatQueryResult } from "./tool-context.js";
+import { resolveConfirmGate } from "../security.js";
 import { executeWithRecovery, recoveryResultToToolResult } from "../error-recovery.js";
 import type { DuckDBEngine } from "../engine/duckdb.js";
 import type { DataDictionaryManager } from "../hooks/data-dictionary.js";
@@ -439,13 +440,25 @@ export function createLoadDataTool(params: ToolRegisterParams): ToolDefinition {
           details: { toolName: "load_data", blocked: true, reason: check.reason },
         };
       }
-      if (check.action === "confirm" && ctx.ui) {
-        const confirmed = await ctx.ui.confirm("Load Data", check.confirmMessage!, { timeout: 30000 });
-        if (!confirmed) {
+      if (check.action === "confirm") {
+        const gate = resolveConfirmGate(check.confirmMessage!, {
+          autoConfirmWrite: rt.config.autoConfirmWrite,
+          hasUi: Boolean(ctx.ui),
+        });
+        if (gate.action === "block") {
           return {
-            content: [{ type: "text", text: "Operation cancelled by user." }],
-            details: { toolName: "load_data", cancelled: true },
+            content: [{ type: "text", text: `Security blocked: ${gate.reason}` }],
+            details: { toolName: "load_data", blocked: true, reason: gate.reason },
           };
+        }
+        if (gate.action === "confirm") {
+          const confirmed = await ctx.ui.confirm("Load Data", gate.confirmMessage, { timeout: 30000 });
+          if (!confirmed) {
+            return {
+              content: [{ type: "text", text: "Operation cancelled by user." }],
+              details: { toolName: "load_data", cancelled: true },
+            };
+          }
         }
       }
 
@@ -458,18 +471,31 @@ export function createLoadDataTool(params: ToolRegisterParams): ToolDefinition {
           fileSize = stats.size;
           fileSizeFormatted = formatFileSize(fileSize);
 
-          if (fileSize > LARGE_FILE_THRESHOLD && ctx.ui) {
+          // 大文件确认门同样 fail-closed（v0.11 S-1）
+          if (fileSize > LARGE_FILE_THRESHOLD) {
             const confirmMsg =
               `文件大小: ${fileSizeFormatted}\n\n` +
               `大文件加载可能消耗大量内存和磁盘空间，且耗时较长。\n` +
               `建议确认文件内容正确后再加载。\n\n` +
               `是否继续加载？`;
-            const confirmed = await ctx.ui.confirm("Large File Warning", confirmMsg, { timeout: 60000 });
-            if (!confirmed) {
+            const gate = resolveConfirmGate(confirmMsg, {
+              autoConfirmWrite: rt.config.autoConfirmWrite,
+              hasUi: Boolean(ctx.ui),
+            });
+            if (gate.action === "block") {
               return {
-                content: [{ type: "text", text: "Operation cancelled by user (large file)." }],
-                details: { toolName: "load_data", cancelled: true, fileSize, fileSizeFormatted },
+                content: [{ type: "text", text: `Security blocked: ${gate.reason}` }],
+                details: { toolName: "load_data", blocked: true, reason: gate.reason, fileSize, fileSizeFormatted },
               };
+            }
+            if (gate.action === "confirm") {
+              const confirmed = await ctx.ui.confirm("Large File Warning", gate.confirmMessage, { timeout: 60000 });
+              if (!confirmed) {
+                return {
+                  content: [{ type: "text", text: "Operation cancelled by user (large file)." }],
+                  details: { toolName: "load_data", cancelled: true, fileSize, fileSizeFormatted },
+                };
+              }
             }
           }
 

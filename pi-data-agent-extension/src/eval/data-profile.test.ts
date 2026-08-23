@@ -37,6 +37,8 @@ function makeIsolatedConfig(dir: string) {
   return loadConfig({
     cwd: dir,
     allowedPaths: [dir],
+    // P7b 走 load_data 工具链路，测体检卡而非确认门；headless 需显式放行（v0.11 S-1）
+    autoConfirmWrite: true,
     dbPath: join(dir, ".pi-data-agent", "session.duckdb"),
     projectConfigDir: join(dir, ".pi-data-agent"),
     outputDir: join(dir, ".pi-data-agent", "output"),

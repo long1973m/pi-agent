@@ -10,6 +10,7 @@ import { Type } from "@sinclair/typebox";
 import type { ToolContext, ToolRegisterParams } from "./tool-context.js";
 import { formatQueryResult } from "./tool-context.js";
 import { executeWithRecovery, recoveryResultToToolResult } from "../error-recovery.js";
+import { resolveConfirmGate } from "../security.js";
 
 const QueryDataParams = Type.Object({
   sql: Type.String({ description: "要执行的 SQL 查询语句（SELECT/DESCRIBE/SHOW）" }),
@@ -69,14 +70,29 @@ export function createQueryDataTool(params: ToolRegisterParams): ToolDefinition 
         };
       }
 
-      // 2. 如果是写操作，走 confirm 流程
-      if (sqlCheck.action === "confirm" && ctx.ui) {
-        const confirmed = await ctx.ui.confirm("Query Data", sqlCheck.confirmMessage!, { timeout: 30000 });
-        if (!confirmed) {
+      // 2. 写操作确认门（fail-closed：无 UI 且未显式配置 autoConfirmWrite 时直接拒绝）
+      let autoConfirmedWrite = false;
+      if (sqlCheck.action === "confirm") {
+        const gate = resolveConfirmGate(sqlCheck.confirmMessage!, {
+          autoConfirmWrite: rt.config.autoConfirmWrite,
+          hasUi: Boolean(ctx.ui),
+        });
+        if (gate.action === "block") {
           return {
-            content: [{ type: "text", text: "Operation cancelled by user." }],
-            details: { toolName: "query_data", cancelled: true },
+            content: [{ type: "text", text: `Security blocked: ${gate.reason}` }],
+            details: { toolName: "query_data", blocked: true, reason: gate.reason },
           };
+        }
+        if (gate.action === "confirm") {
+          const confirmed = await ctx.ui.confirm("Query Data", gate.confirmMessage, { timeout: 30000 });
+          if (!confirmed) {
+            return {
+              content: [{ type: "text", text: "Operation cancelled by user." }],
+              details: { toolName: "query_data", cancelled: true },
+            };
+          }
+        } else {
+          autoConfirmedWrite = true;
         }
       }
 
@@ -172,6 +188,7 @@ export function createQueryDataTool(params: ToolRegisterParams): ToolDefinition 
               sql: args.sql,
               userIntent: args.user_intent,
               assumptions: args.assumptions ?? null,
+              autoConfirmedWrite,
               totalRowCount: result.totalRowCount,
               returnedRowCount: result.returnedRowCount,
               truncated: result.truncated,

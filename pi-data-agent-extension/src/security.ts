@@ -19,6 +19,47 @@ import type { SecurityConfig, SecurityCheckResult, SecurityAction } from "./type
 /** SQL 操作分类 */
 type SqlCategory = "read" | "write" | "dangerous" | "unknown";
 
+/**
+ * 确认门三态判定（v0.11 S-1 fail-closed）
+ *
+ * 过去各工具的确认分支写成 `if (check.action === "confirm" && ctx.ui)`，
+ * headless 环境下 ctx.ui 不存在 → 整个分支被跳过 → 写操作静默执行（fail-open）。
+ * 所有需要用户确认的操作必须经此函数判定：
+ *
+ * - autoConfirmWrite=true        → allow（显式配置放行，结果需标记 auto-confirmed）
+ * - 有交互 UI                    → confirm（维持原有弹窗行为）
+ * - 两者皆无                     → block（拒绝静默执行）
+ */
+export interface ConfirmGateOptions {
+  /** 是否自动确认写操作（config.autoConfirmWrite / PI_DATA_AGENT_AUTO_CONFIRM_WRITE） */
+  autoConfirmWrite: boolean;
+  /** 当前环境是否存在可用的交互式 UI */
+  hasUi: boolean;
+}
+
+export type ConfirmGateDecision =
+  | { action: "allow"; autoConfirmed: true }
+  | { action: "confirm"; confirmMessage: string }
+  | { action: "block"; reason: string };
+
+export function resolveConfirmGate(
+  confirmMessage: string,
+  options: ConfirmGateOptions
+): ConfirmGateDecision {
+  if (options.autoConfirmWrite) {
+    return { action: "allow", autoConfirmed: true };
+  }
+  if (options.hasUi) {
+    return { action: "confirm", confirmMessage };
+  }
+  return {
+    action: "block",
+    reason:
+      "该操作需要用户确认，但当前环境没有可用的交互界面（headless），已按 fail-closed 原则拒绝。" +
+      "如需自动化放行写操作，请显式设置环境变量 PI_DATA_AGENT_AUTO_CONFIRM_WRITE=true。",
+  };
+}
+
 /** 安全层检查器 */
 export class SecurityChecker {
   private config: SecurityConfig;

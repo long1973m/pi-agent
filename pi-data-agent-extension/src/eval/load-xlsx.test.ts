@@ -36,6 +36,8 @@ function makeIsolatedConfig(dir: string) {
   return loadConfig({
     cwd: dir,
     allowedPaths: [dir],
+    // 本文件测加载逻辑而非确认门；headless 下写 SQL 需显式放行（v0.11 S-1 fail-closed）
+    autoConfirmWrite: true,
     dbPath: join(dir, ".pi-data-agent", "session.duckdb"),
     projectConfigDir: join(dir, ".pi-data-agent"),
     outputDir: join(dir, ".pi-data-agent", "output"),
