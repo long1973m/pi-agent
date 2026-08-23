@@ -21,6 +21,7 @@ import { join } from "node:path";
 
 // 中间件
 import { localOnly } from "./middleware/local-only.js";
+import { createHostCheck, dashboardAllowedHosts } from "./middleware/host-check.js";
 import { originCheck } from "./middleware/origin-check.js";
 import { writeTokenGuard, setWriteToken } from "./middleware/write-token.js";
 import { errorHandler } from "./middleware/error-handler.js";
@@ -89,8 +90,19 @@ export async function createDashboardServer(
   setWriteToken(writeToken);
 
   // ======== 全局中间件 ========
+  // hostCheck 需要真实绑定端口（port=0 时由系统分配），而中间件挂载在 listen 之前，
+  // 故通过闭包持有 server 实例、每次请求时从 address() 动态解析端口
+  let boundServer: Server | null = null;
+  const resolvePort = (): number => {
+    const addr = boundServer?.address();
+    return typeof addr === "object" && addr !== null ? addr.port : port;
+  };
+
   app.use(securityHeaders);   // 安全响应头
-  app.use(localOnly);         // 限制本地访问
+  app.use(localOnly);         // 限制本地访问（socket.remoteAddress）
+  // v0.11 S-3: Host 头校验——DNS rebinding 时 remoteAddress 恰为 127.0.0.1，
+  // localOnly 拦不住；GET 接口无 Origin 校验，靠 Host 白名单兜底
+  app.use(createHostCheck(() => dashboardAllowedHosts(resolvePort())));
   app.use(rateLimiter);       // 请求频率限制
   app.use(originCheck);       // Origin 校验
 
@@ -164,6 +176,7 @@ export async function createDashboardServer(
   // ======== 启动 HTTP Server ========
   return new Promise<Server>((resolve, reject) => {
     const server = createServer(app);
+    boundServer = server;
 
     server.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE") {
