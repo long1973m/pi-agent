@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi Data Agent Dashboard</title>
+<link rel="stylesheet" href="style.css?v=0.11.0">
+<script>
+  // 主题初始化（在 CSS 加载前执行，避免闪烁）
+  const savedTheme = localStorage.getItem("dashboard-theme") || "dark";
+  document.documentElement.setAttribute("data-theme", savedTheme);
+</script>
+</head>
+<body>
+<div id="app">
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <h1><svg class="sidebar-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect width="16" height="16" rx="4" fill="url(#pda-logo-grad)"/><path d="M4.5 10.5 7 7l2 2 2.5-3.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="pda-logo-grad" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse"><stop stop-color="#8290f9"/><stop offset="1" stop-color="#5865f2"/></linearGradient></defs></svg>Pi Data Agent</h1>
+      <span class="version">v0.11 Dashboard</span>
+      <button class="btn btn-sm theme-toggle" id="theme-toggle-btn" title="切换亮色/暗色主题" onclick="Dashboard.toggleTheme()" aria-label="切换亮色/暗色主题"><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" data-tab="data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>数据</li>
+      <li class="nav-item" data-tab="reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>报告</li>
+      <li class="nav-item" data-tab="sql-history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>SQL 历史</li>
+    </ul>
+  </nav>
+  <main class="content">
+    <!-- v0.10.1: 数据 + 语义合并为一个工作台 Tab（3 Tab：数据 / 报告 / SQL 历史） -->
+    <div id="tab-data" class="tab-panel active">
+      <div class="panel-header">
+        <h2>数据</h2>
+        <div class="panel-header-actions">
+          <button class="btn btn-sm btn-primary" onclick="Dashboard.openUploadModal()">＋ 上传数据</button>
+          <button class="panel-refresh-btn" onclick="Dashboard.refreshPanel('data')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+            刷新
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="data-content">
+        <!-- v0.11 P2: 各区块初始占位由「加载中...」文本改为 shimmer 骨架屏 -->
+        <!-- ① 全局表选择器（唯一选择入口，联动下方全部区块） -->
+        <section class="data-section" id="datasets-content">
+          <div class="skeleton" aria-hidden="true">
+            <div class="skeleton-line medium"></div>
+            <div class="skeleton-line short"></div>
+          </div>
+        </section>
+        <!-- ② 数据体检（常驻：跟随全局选中的表） -->
+        <section class="semantics-section">
+          <div class="semantics-section-title">数据体检</div>
+          <div id="dataset-profile">
+            <div class="skeleton" aria-hidden="true">
+              <div class="skeleton-line title"></div>
+              <div class="kpi-row">
+                <div class="skeleton-block"></div>
+                <div class="skeleton-block"></div>
+                <div class="skeleton-block"></div>
+                <div class="skeleton-block"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- ③ 表卡片编辑区 -->
+        <section class="semantics-section">
+          <div class="semantics-section-title">表卡片</div>
+          <div id="table-cards-content">
+            <div class="skeleton" aria-hidden="true">
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line short"></div></div>
+            </div>
+          </div>
+        </section>
+        <!-- ④ 字段字典编辑区 -->
+        <section class="semantics-section">
+          <div class="semantics-section-title">字段字典</div>
+          <div id="dictionaries-content">
+            <div class="skeleton" aria-hidden="true">
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div><div class="skeleton-line short"></div></div>
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+            </div>
+          </div>
+        </section>
+        <!-- ⑤ 前 N 行数据预览 -->
+        <section class="data-section" id="data-preview-section">
+          <div id="dataset-card-summary"></div>
+          <div id="dataset-preview">
+            <p class="empty-state">选择上方表后此处显示前 50 行预览；新上传的表会自动定位到这里。</p>
+          </div>
+          <div id="dataset-stats"></div>
+        </section>
+        <!-- 指标定义（保留在数据工作台底部） -->
+        <section class="semantics-section">
+          <div class="semantics-section-title">指标定义</div>
+          <div id="metrics-content">
+            <div class="skeleton" aria-hidden="true">
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line short"></div></div>
+              <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line medium"></div></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div id="tab-reports" class="tab-panel">
+      <div class="panel-header">
+        <h2>报告</h2>
+        <div class="panel-header-actions">
+          <input class="inline-edit" id="report-search" placeholder="搜索报告..." value="" onkeydown="if(event.key==='Enter')ReportsModule.search()" />
+          <button class="btn btn-sm" onclick="ReportsModule.search()">搜索</button>
+          <button class="panel-refresh-btn" id="reports-refresh-btn" onclick="Dashboard.refreshPanel('reports')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+            刷新
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="reports-content">
+        <div class="reports-section-header">
+          正式分析报告 <span class="count-badge" id="analysis-count">0</span>
+        </div>
+        <div class="reports-grid" id="analysis-list">
+          <!-- v0.11 P2: 静态空态与 app.js 渲染的富空态结构保持一致（加载后会被替换） -->
+          <div class="empty-state-rich">
+            <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>
+            <p class="empty-state-text">暂无正式分析报告。在终端完成分析后执行 /report 生成</p>
+          </div>
+        </div>
+        <div class="reports-collapsed-group">
+          <button type="button" class="reports-collapsed-toggle" onclick="ReportsModule.toggleSessionRecords()">
+            <span class="reports-collapsed-arrow" id="session-records-arrow">▸</span>
+            分析过程记录 <span class="count-badge" id="session-count">0</span>
+            <span class="report-generate-hint">生成正式报告：在终端完成分析后执行 /report</span>
+          </button>
+          <div class="session-list" id="session-list" style="display:none">
+            <div class="empty-state-rich">
+              <span class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></span>
+              <p class="empty-state-text">暂无分析过程记录。在 TUI 中执行查询和可视化后，记录将在此显示</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-sql-history" class="tab-panel">
+      <div class="panel-header">
+        <h2>SQL 历史</h2>
+        <div class="panel-header-actions">
+          <button class="panel-refresh-btn" onclick="Dashboard.refreshPanel('sql-history')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+            刷新
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="sql-history-content">
+        <!-- v0.11 P2: 初始占位改为 shimmer 骨架屏 -->
+        <div class="skeleton" aria-hidden="true">
+          <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line long"></div><div class="skeleton-line short"></div></div>
+          <div class="skeleton-card"><div class="skeleton-line title"></div><div class="skeleton-line medium"></div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="toast-container" id="toast-container"></div>
+<script src="app.js?v=0.11.0"></script>
+</body>
+</html>

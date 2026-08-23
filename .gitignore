@@ -1,0 +1,15 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 运行时数据（含 session.duckdb、uploads、dashboard-token 凭证）
+.pi-data-agent/
+.uploads/
+
+# 系统与分享包
+.DS_Store
+.trae-html-share-packages/
+
+# Python 字节码产物
+__pycache__/
+*.pyc
