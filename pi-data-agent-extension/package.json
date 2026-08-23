@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "./node_modules/.bin/tsc && cp -r src/dashboard/static dist/dashboard/",
+    "build": "rm -rf dist && ./node_modules/.bin/tsc && cp -r src/dashboard/static dist/dashboard/",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
