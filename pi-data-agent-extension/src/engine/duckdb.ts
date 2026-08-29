@@ -22,6 +22,7 @@ import {
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createLogger } from "../utils/logger.js";
+import { quoteSqlIdentifier } from "../utils/sql.js";
 import type {
   QueryResult,
   ColumnInfo,
@@ -506,13 +507,13 @@ export class DuckDBEngine {
     return "VARCHAR";
   }
 
-  /** 安全地引用标识符 */
+  /**
+   * 安全地引用标识符（R-1 收敛：实现见 utils/sql.ts 的 quoteSqlIdentifier）。
+   * 语义由"白名单正则 + 抛异常"统一为 `""` 转义（DuckDB 标准，可承载含引号/
+   * 连字符等合法名称），保留控制字符（NUL/CR/LF）拒绝防护。
+   */
   quoteIdentifier(name: string): string {
-    // 简单处理：只允许字母数字下划线
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-      throw new Error(`Invalid identifier: ${name}`);
-    }
-    return `"${name}"`;
+    return quoteSqlIdentifier(name);
   }
 }
 

@@ -11,6 +11,7 @@
 import type { DuckDBEngine } from "../../engine/duckdb.js";
 import type { DatasetItem, ColumnStatsInfo } from "../types.js";
 import { PREVIEW_DEFAULT_ROWS, PREVIEW_MAX_ROWS, STATS_TIMEOUT_MS, STATS_MAX_COLUMNS } from "../config.js";
+import { quoteSqlIdentifier } from "../../utils/sql.js";
 
 /**
  * 数据集 Reader
@@ -302,9 +303,9 @@ export class DatasetReader {
     return stats;
   }
 
-  /** DuckDB 标识符安全引用 */
+  /** DuckDB 标识符安全引用（R-1 收敛：实现见 utils/sql.ts 的 quoteSqlIdentifier） */
   private escapeIdentifier(name: string): string {
-    return `"${name.replace(/"/g, '""')}"`;
+    return quoteSqlIdentifier(name);
   }
 
   /** 带超时的 Promise 包装 */

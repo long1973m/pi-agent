@@ -336,20 +336,3 @@ export class SecurityChecker {
   }
 }
 
-/** 创建默认安全层（基于当前 cwd） */
-export function createDefaultSecurityChecker(cwd?: string): SecurityChecker {
-  const resolvedCwd = resolve(cwd ?? process.cwd());
-  const config: SecurityConfig = {
-    cwd: resolvedCwd,
-    allowedPaths: [resolvedCwd],
-    autoConfirmWrite: false,
-    dangerousSqlPatterns: [
-      /^\s*DROP\s+TABLE\s+\w+\s*;?\s*$/i,
-      /^\s*DELETE\s+FROM\s+\w+\s*;?\s*$/i,
-      /^\s*UPDATE\s+\w+\s+SET\s+.+\s*;?\s*$/i,
-      /^\s*TRUNCATE\s+TABLE\s+\w+\s*;?\s*$/i,
-    ],
-    blockOutOfBoundsPath: true,
-  };
-  return new SecurityChecker(config);
-}

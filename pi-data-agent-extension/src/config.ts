@@ -7,8 +7,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { extname } from "node:path";
 import type { SecurityConfig } from "./types.js";
 
 /** 应用配置 */
@@ -178,15 +176,7 @@ export function ensureUploadsDir(config: AppConfig): void {
   }
 }
 
-/** 生成安全的上传文件名（防止路径遍历和文件名冲突） */
-export function generateUploadFilename(originalName: string): string {
-  const ext = extname(originalName).toLowerCase();
-  const uuid = randomUUID();
-  const timestamp = Date.now();
-  return `${timestamp}_${uuid}${ext}`;
-}
-
-/** 写令牌请求头名称 */
+/** 写令牌请求头名称（R-1 收敛：单一出处，dashboard 侧经 dashboard/config.ts 转出） */
 export const WRITE_TOKEN_HEADER = "X-Write-Token";
 
 /** 从 AppConfig 生成 SecurityConfig */

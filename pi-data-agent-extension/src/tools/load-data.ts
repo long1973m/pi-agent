@@ -28,6 +28,7 @@ import type { DuckDBEngine } from "../engine/duckdb.js";
 import type { DataDictionaryManager } from "../hooks/data-dictionary.js";
 import { profileTable, formatProfileCard, type TableProfile } from "../hooks/data-profile.js";
 import { createLogger } from "../utils/logger.js";
+import { formatFileSize } from "../utils/format.js";
 
 const logger = createLogger("load-data");
 
@@ -39,14 +40,6 @@ const MAX_EXCEL_CELLS = 5_000_000;
 
 /** Excel 解析防护：转换后 CSV 文本体积上限 */
 const MAX_EXCEL_CSV_BYTES = 200 * 1024 * 1024;
-
-/** 格式化文件大小 */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 /** load-data 参数 */
 const LoadDataParams = Type.Object({

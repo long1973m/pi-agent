@@ -24,8 +24,12 @@ export const BODY_SIZE_LIMIT = "256kb";
  */
 export const UPLOAD_BODY_SIZE_LIMIT = "70mb";
 
-/** 写令牌 header 名称 */
-export const WRITE_TOKEN_HEADER = "x-write-token";
+/**
+ * 写令牌 header 名称（R-1 收敛：单一出处为主 config.ts 的 "X-Write-Token"，
+ * 此处转出供 dashboard 中间件沿用原导入路径；HTTP 头大小写不敏感，
+ * 服务端读取时本就统一 toLowerCase()）。
+ */
+export { WRITE_TOKEN_HEADER } from "../config.js";
 
 /** 数据预览默认行数 */
 export const PREVIEW_DEFAULT_ROWS = 50;

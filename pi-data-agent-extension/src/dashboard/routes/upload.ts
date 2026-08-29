@@ -31,6 +31,7 @@ import type { DataDictionaryManager } from "../../hooks/data-dictionary.js";
 import { profileTable } from "../../hooks/data-profile.js";
 import type { TableProfile } from "../../hooks/data-profile.js";
 import { createLogger } from "../../utils/logger.js";
+import { formatFileSize } from "../../utils/format.js";
 
 const logger = createLogger("upload");
 
@@ -47,13 +48,6 @@ const ALLOWED_EXTENSIONS = new Set([".csv", ".tsv", ".json", ".jsonl", ".ndjson"
 function isSafeFilename(name: string): boolean {
   // 只允许字母、数字、下划线、连字符、点
   return /^[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+$/.test(name);
-}
-
-/** 格式化文件大小 */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** 生成安全的存储文件名 */
@@ -85,7 +79,7 @@ export async function autoLoadUploadedFile(
   if (params.size > AUTOLOAD_MAX_SIZE) {
     return {
       ok: false,
-      reason: `文件较大（${formatSize(params.size)}），已跳过自动加载。可在 Agent 中说「加载 ${params.originalName}」手动加载。`,
+      reason: `文件较大（${formatFileSize(params.size)}），已跳过自动加载。可在 Agent 中说「加载 ${params.originalName}」手动加载。`,
     };
   }
 
@@ -211,7 +205,7 @@ export function createUploadRouter(deps: UploadDeps): Router {
         res.status(413).json({
           error: {
             code: "FILE_TOO_LARGE",
-            message: `文件大小 ${formatSize(buffer.length)} 超过限制 ${formatSize(MAX_UPLOAD_SIZE)}`,
+            message: `文件大小 ${formatFileSize(buffer.length)} 超过限制 ${formatFileSize(MAX_UPLOAD_SIZE)}`,
           },
           meta: { requestId: randomUUID() },
         });
@@ -225,7 +219,7 @@ export function createUploadRouter(deps: UploadDeps): Router {
 
       const stats = statSync(filePath);
 
-      logger.debug(`Saved: ${safeFilename} (${formatSize(stats.size)})`);
+      logger.debug(`Saved: ${safeFilename} (${formatFileSize(stats.size)})`);
 
       // v0.9 A-2: 自动加载进 DuckDB（best-effort，失败不影响上传响应）
       const loaded = await autoLoadUploadedFile(
@@ -245,7 +239,7 @@ export function createUploadRouter(deps: UploadDeps): Router {
           name: safeFilename,
           originalName: filename,
           size: stats.size,
-          sizeFormatted: formatSize(stats.size),
+          sizeFormatted: formatFileSize(stats.size),
           format: format ?? ext.slice(1),
           uploadedAt: new Date().toISOString(),
           loaded,
@@ -278,7 +272,7 @@ export function createUploadRouter(deps: UploadDeps): Router {
             name,
             path: filePath,
             size: stats.size,
-            sizeFormatted: formatSize(stats.size),
+            sizeFormatted: formatFileSize(stats.size),
             uploadedAt: stats.birthtime.toISOString(),
           };
         })

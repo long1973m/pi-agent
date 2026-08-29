@@ -18,6 +18,7 @@ import { statSync } from "node:fs";
 import type { ToolContext, ToolRegisterParams } from "./tool-context.js";
 import { executeWithRecovery, recoveryResultToToolResult } from "../error-recovery.js";
 import { resolveConfirmGate } from "../security.js";
+import { formatFileSize } from "../utils/format.js";
 
 /** export-result 参数 */
 const ExportResultParams = Type.Object({
@@ -35,13 +36,6 @@ const ExportResultParams = Type.Object({
     description: "关联的表名（用于安全检查上下文），可选",
   })),
 });
-
-/** 格式化文件大小 */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function createExportResultTool(params: ToolRegisterParams): ToolDefinition {
   return {
