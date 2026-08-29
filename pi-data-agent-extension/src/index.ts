@@ -3,7 +3,6 @@
  *
  * Phase 1 集成入口：
  * - 初始化 PersistenceManager、SecurityChecker、DuckDBEngine
- * - 保留 S0.1 poc_dummy 工具向后兼容
  * - session_start 时恢复 session 状态、连接 DuckDB
  * - session_shutdown 时保存 session 状态、关闭 DuckDB
  * - before_agent_start 注入数据上下文到 system prompt
@@ -17,10 +16,7 @@ import type {
   BeforeAgentStartEventResult,
   SessionStartEvent,
   SessionShutdownEvent,
-  ToolDefinition,
-  AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 
 import { loadConfig, toSecurityConfig, ensureUploadsDir } from "./config.js";
 import { PersistenceManager } from "./persistence.js";
@@ -625,74 +621,6 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
     },
   });
   logger.debug("Registered /report command");
-
-  // ========================================================================
-  // S0.1 向后兼容：poc_dummy 工具
-  // ========================================================================
-
-  const pocDummyTool: ToolDefinition = {
-    name: "poc_dummy",
-    label: "PoC Dummy Tool",
-    description: "A dummy tool for S0.1 validation. Echoes back the input message with session metadata.",
-    parameters: Type.Object({
-      message: Type.String({ description: "Message to echo back" }),
-      trigger_confirm: Type.Optional(Type.Boolean({ description: "Whether to trigger a confirm dialog" })),
-      trigger_select: Type.Optional(Type.Boolean({ description: "Whether to trigger a select dialog" })),
-    }),
-    execute: async (
-      toolCallId: string,
-      params: { message: string; trigger_confirm?: boolean; trigger_select?: boolean },
-      signal: AbortSignal | undefined,
-      onUpdate: ((partialResult: AgentToolResult<unknown>) => void) | undefined,
-      ctx: ExtensionContext
-    ): Promise<AgentToolResult<unknown>> => {
-      let confirmResult = false;
-      let selectResult: string | undefined;
-
-      if (params.trigger_confirm && ctx.ui) {
-        confirmResult = await ctx.ui.confirm(
-          "PoC Confirm",
-          `Confirm operation: ${params.message}`,
-          { timeout: 30000 }
-        );
-      }
-
-      if (params.trigger_select && ctx.ui) {
-        selectResult = await ctx.ui.select(
-          "PoC Select",
-          ["option_a", "option_b", "option_c"],
-          { timeout: 30000 }
-        );
-      }
-
-      const sessionKey = `poc_${Date.now()}`;
-      runtime?.sessionData.set(sessionKey, {
-        message: params.message,
-        confirmResult,
-        selectResult,
-        timestamp: new Date().toISOString(),
-      });
-
-      return {
-        content: [{
-          type: "text",
-          text: `PoC dummy tool executed. Message: ${params.message}. Confirm: ${confirmResult}. Select: ${selectResult}`,
-        }],
-        details: {
-          toolName: "poc_dummy",
-          inputMessage: params.message,
-          confirmResult,
-          selectResult,
-          sessionKey,
-          runtimeInitialized: !!runtime,
-          timestamp: new Date().toISOString(),
-        },
-      };
-    },
-  };
-
-  pi.registerTool(pocDummyTool);
-  logger.debug("Registered poc_dummy tool (backward compatible)");
 };
 
 export default factory;
