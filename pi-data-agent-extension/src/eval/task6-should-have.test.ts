@@ -5,6 +5,9 @@
 
 import { renderReport } from "../report/render-report.js";
 import type { DataDictionaryEntry } from "../types.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 let ok = 0;
 let fail = 0;
@@ -84,6 +87,9 @@ console.log("\nTest 5: No dictionary provided");
   assert(!result.html.includes('class="dict-panel"'), "No dictionary panel when none provided");
 }
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${ok} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+if (fail > 0) {
+  throw new Error(`${fail} assertion(s) failed`);
+}
+}
+
+defineScriptSuite("task6-should-have", run);

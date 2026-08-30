@@ -16,6 +16,9 @@ import { fileURLToPath } from "node:url";
 import { ReportIndexService } from "../dashboard/services/report-index.js";
 import { ChartIndexService } from "../dashboard/services/chart-index.js";
 import { QueryMemoryReader } from "../dashboard/services/query-memory-reader.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+async function run(): Promise<void> {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_DIR = join(__dirname, ".tmp-dashboard-api-test");
@@ -353,4 +356,9 @@ console.log("\nD11-e: 分页");
 // ============================================================================
 
 console.log(`\n=== dashboard-api.test.ts: ${passed} passed, ${failed} failed ===`);
-if (failed > 0) process.exit(1);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
+}
+
+defineScriptSuite("dashboard-api", run);

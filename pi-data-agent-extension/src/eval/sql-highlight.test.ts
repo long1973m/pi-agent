@@ -4,6 +4,9 @@
  */
 
 import { highlightSql, getFirstLines, exceedsLines } from "../report/sql-highlight.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 let ok = 0;
 let fail = 0;
@@ -169,6 +172,9 @@ console.log("\nTest 15: Nested parentheses");
   assert(html.includes('<span class="sql-kw">MAX</span>'), "MAX highlighted");
 }
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${ok} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+if (fail > 0) {
+  throw new Error(`${fail} assertion(s) failed`);
+}
+}
+
+defineScriptSuite("sql-highlight", run);

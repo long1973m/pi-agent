@@ -5,7 +5,7 @@
  * 运行: npx tsx src/eval/analysis-report.test.ts
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import { buildEvidencePackage } from "../report/evidence/build-evidence-package.js";
 import { validateEvidencePackage, calculateEvidenceCoverage, checkEvidenceSufficiency } from "../report/evidence/evidence-validator.js";

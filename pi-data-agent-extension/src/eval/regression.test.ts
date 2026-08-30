@@ -29,6 +29,7 @@ import type { ToolContext } from "../tools/tool-context.js";
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
 
 const TEST_CWD = cwd();
 const EVAL_DIR = join(TEST_CWD, ".pi-data-agent", "eval");
@@ -109,6 +110,8 @@ async function runRegressionTests(): Promise<void> {
   // Setup
   const { irisPath, bigPath } = ensureGoldenDatasets();
   const config = loadConfig();
+  // S-1 fail-closed（v0.11）：headless 测试无 UI，写操作需显式放行（spec v0.11 §13）
+  config.autoConfirmWrite = true;
   const persistence = new PersistenceManager(config.globalConfigDir, config.projectConfigDir);
   persistence.saveDataDictionary([], "project");
   persistence.saveQueryMemory({ maxEntries: 5, entries: [] }, "project");
@@ -294,8 +297,10 @@ async function runRegressionTests(): Promise<void> {
   assert("SELECT allowed", security.checkSql("SELECT * FROM iris").action === "allow");
   assert("DESCRIBE allowed", security.checkSql("DESCRIBE iris").action === "allow");
 
-  // 写操作需确认
-  const insertCheck = security.checkSql("INSERT INTO iris VALUES (1,2,3,4,'test')");
+  // 写操作需确认（v0.11 S-1：autoConfirmWrite=true 时 checkSql 直接返回 allow（自动确认），
+  // 三态判定细节由 confirm-gate.test.ts 覆盖；此处用未开自动确认的 checker 验证写分类语义）
+  const securityNoAuto = new SecurityChecker({ ...toSecurityConfig(config), autoConfirmWrite: false });
+  const insertCheck = securityNoAuto.checkSql("INSERT INTO iris VALUES (1,2,3,4,'test')");
   assert("INSERT requires confirm", insertCheck.action === "confirm");
 
   // 危险操作拦截
@@ -303,7 +308,7 @@ async function runRegressionTests(): Promise<void> {
   assert("DELETE without WHERE blocked", security.checkSql("DELETE FROM iris").action === "block");
 
   // CTAS 需确认
-  const ctasCheck = security.checkSql("CREATE TABLE tmp AS SELECT * FROM iris");
+  const ctasCheck = securityNoAuto.checkSql("CREATE TABLE tmp AS SELECT * FROM iris");
   assert("CTAS requires confirm", ctasCheck.action === "confirm");
 
   // 路径安全
@@ -447,10 +452,9 @@ async function runRegressionTests(): Promise<void> {
   console.log(`Passed: ${passed}`);
   console.log(`Failed: ${failed}`);
   console.log(failed === 0 ? "\n🎉 All golden standard tests PASSED!" : "\n⚠️ Some tests FAILED");
-  process.exit(failed > 0 ? 1 : 0);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
 }
 
-runRegressionTests().catch((err) => {
-  console.error("Regression test error:", err);
-  process.exit(1);
-});
+defineScriptSuite("regression", runRegressionTests);

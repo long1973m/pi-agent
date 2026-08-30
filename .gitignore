@@ -13,3 +13,11 @@ dist/
 # Python 字节码产物
 __pycache__/
 *.pyc
+
+# 测试与覆盖率产物
+coverage/
+**/src/eval/.tmp-*/
+vitest.config.ts.timestamp-*.mjs
+
+# WorkBuddy 工作区运行时（记忆/日志）
+.workbuddy/

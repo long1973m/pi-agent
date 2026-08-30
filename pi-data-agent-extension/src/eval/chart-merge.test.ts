@@ -7,7 +7,7 @@
  * 3. 过程记录行只显示图表数量文字
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 describe("chart-merge", () => {

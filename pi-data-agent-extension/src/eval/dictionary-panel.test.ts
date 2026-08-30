@@ -5,6 +5,9 @@
 
 import { renderDictionaryPanel } from "../report/dictionary-panel.js";
 import type { DataDictionaryEntry } from "../types.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 let ok = 0;
 let fail = 0;
@@ -134,6 +137,9 @@ console.log("\nTest 10: HTML escaping");
   assert(html.includes("&lt;table&gt;"), "Shows escaped table name");
 }
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${ok} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+if (fail > 0) {
+  throw new Error(`${fail} assertion(s) failed`);
+}
+}
+
+defineScriptSuite("dictionary-panel", run);

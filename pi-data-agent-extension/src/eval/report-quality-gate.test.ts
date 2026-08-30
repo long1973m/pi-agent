@@ -5,7 +5,7 @@
  * 运行: npx tsx src/eval/report-quality-gate.test.ts
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import { runQualityGate } from "../report/analysis/report-quality-gate.js";
 import type { EvidencePackage } from "../report/evidence/types.js";

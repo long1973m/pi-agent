@@ -7,7 +7,7 @@
  * 3. 空过程记录显示正确空状态
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 describe("reports-module-ui", () => {

@@ -5,7 +5,7 @@
  * 运行: npx tsx src/eval/dictionary-review.test.ts
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import type { ColumnSemantic, DataDictionaryEntry, ColumnSemanticStatus } from "../types.js";
 

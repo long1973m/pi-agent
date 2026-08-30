@@ -8,7 +8,7 @@
  * 4. GET 返回 revision
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,

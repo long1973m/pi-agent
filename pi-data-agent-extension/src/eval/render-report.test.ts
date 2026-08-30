@@ -6,6 +6,9 @@
  */
 
 import { renderReport } from "../report/render-report.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 const entries = [
   { type: "thinking_level_change", id: "t1", parentId: null, timestamp: "2026-01-01T00:00:00Z" } as any,
@@ -67,6 +70,9 @@ const piiResult = renderReport({ entries: entriesWithPII, title: "PII Test", gen
 assert(!piiResult.html.includes("13812345678"), "Phone number masked in HTML");
 assert(piiResult.html.includes("138****5678"), "Phone number partially visible");
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${ok} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+if (fail > 0) {
+  throw new Error(`${fail} assertion(s) failed`);
+}
+}
+
+defineScriptSuite("render-report", run);

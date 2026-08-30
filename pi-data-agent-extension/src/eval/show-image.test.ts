@@ -22,6 +22,7 @@ import type { ToolContext } from "../tools/tool-context.js";
 import { writeFileSync, mkdirSync, existsSync, unlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
 
 const TEST_CWD = cwd();
 const EVAL_DIR = join(TEST_CWD, ".pi-data-agent", "eval");
@@ -201,10 +202,9 @@ async function runShowImageTests(): Promise<void> {
 
   // Summary
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
-  process.exit(failed > 0 ? 1 : 0);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
 }
 
-runShowImageTests().catch((err) => {
-  console.error("Test runner failed:", err);
-  process.exit(1);
-});
+defineScriptSuite("show-image", runShowImageTests);

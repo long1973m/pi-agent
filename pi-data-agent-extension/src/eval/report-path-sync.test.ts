@@ -8,7 +8,7 @@
  * 4. Dashboard ReportIndexService 能扫描到报告
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,

@@ -19,6 +19,7 @@ import type { ToolContext } from "../tools/tool-context.js";
 import { existsSync, unlinkSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
 
 const TEST_CWD = cwd();
 
@@ -45,6 +46,8 @@ async function runIntegrationTests(): Promise<void> {
 
   // Setup
   const config = loadConfig();
+  // S-1 fail-closed（v0.11）：headless 测试无 UI，写操作需显式放行（spec v0.11 §13）
+  config.autoConfirmWrite = true;
   const persistence = new PersistenceManager(config.globalConfigDir, config.projectConfigDir);
   persistence.saveDataDictionary([], "project");
   persistence.saveQueryMemory({ maxEntries: 5, entries: [] }, "project");
@@ -170,10 +173,9 @@ async function runIntegrationTests(): Promise<void> {
   try { unlinkSync(join(config.outputDir, "regression-export.csv")); } catch { /* ignore */ }
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
-  process.exit(failed > 0 ? 1 : 0);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
 }
 
-runIntegrationTests().catch((err) => {
-  console.error("Integration test error:", err);
-  process.exit(1);
-});
+defineScriptSuite("integration-phase2", runIntegrationTests);

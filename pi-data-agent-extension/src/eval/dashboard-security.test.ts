@@ -11,6 +11,9 @@
 
 import { localOnly } from "../dashboard/middleware/local-only.js";
 import { writeTokenGuard, setWriteToken } from "../dashboard/middleware/write-token.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+async function run(): Promise<void> {
 
 let passed = 0;
 let failed = 0;
@@ -350,4 +353,9 @@ console.log("\nD15-e: Unicode / 中文被拦截");
 // ============================================================================
 
 console.log(`\n=== dashboard-security.test.ts: ${passed} passed, ${failed} failed ===`);
-if (failed > 0) process.exit(1);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
+}
+
+defineScriptSuite("dashboard-security", run);

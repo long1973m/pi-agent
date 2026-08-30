@@ -19,6 +19,9 @@ import { AtomicStore, RevisionConflictError } from "../dashboard/services/atomic
 import { DictionaryStore } from "../dashboard/services/dictionary-store.js";
 import { MetricStore } from "../dashboard/services/metric-store.js";
 import type { MetricEntry } from "../dashboard/types.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+async function run(): Promise<void> {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEST_DIR = join(__dirname, ".tmp-dashboard-storage-test");
@@ -412,13 +415,13 @@ console.log("\nD12-c: 归档口径（软删除）");
   teardown();
 }
 
-console.log("\nD12-d: 口径修改同步到 agent.md");
+console.log("\nD12-d: 口径修改持久化（v0.10 语义：非 legacy 定义不镜像 agent.md）");
 {
   setup();
   const store = new MetricStore(TEST_DIR);
   const agentMdPath = join(TEST_DIR, "agent.md");
 
-  // 创建
+  // 创建非 legacy 指标定义
   const created = store.create(
     { name: "同步测试", definition: "初始定义", datasets: [], status: "user-confirmed", source: "user" },
     -1,
@@ -428,11 +431,18 @@ console.log("\nD12-d: 口径修改同步到 agent.md");
   const metricId = created.data[0].id;
   store.update(metricId, { definition: "修改后定义" }, 1);
 
-  // 验证 agent.md
+  // v0.10 起：用户维护的指标定义只住 metrics.json（重新构造 store 验证持久化）
+  const reread = new MetricStore(TEST_DIR);
+  const { metrics } = reread.list();
+  const updated = metrics.find((m) => m.id === metricId);
+  assert(Boolean(updated), "metrics.json 中能读到该指标");
+  assertEqual(updated?.definition, "修改后定义", "修改后的定义已持久化到 metrics.json");
+
+  // agent.md 仅镜像 legacy 历史口径，非 legacy 定义不写入
   const agentContent = readFileSync(agentMdPath, "utf-8");
   const calibers = JSON.parse(agentContent);
   assert(Array.isArray(calibers), "agent.md 是数组格式");
-  assertEqual(calibers[0].definition, "修改后定义", "agent.md 中定义已同步更新");
+  assertEqual(calibers.length, 0, "非 legacy 定义不镜像 agent.md（v0.10 语义）");
   teardown();
 }
 
@@ -440,7 +450,12 @@ console.log("\nD12-d: 口径修改同步到 agent.md");
 // 汇总（延迟 500ms 确保 async 测试完成）
 // ============================================================================
 
-setTimeout(() => {
+// 原 setTimeout 等待改为 await，确保异步断言完成后再判定
+  await new Promise((resolve) => setTimeout(resolve, 500));
   console.log(`\n=== dashboard-storage.test.ts: ${passed} passed, ${failed} failed ===`);
-  if (failed > 0) process.exit(1);
-}, 500);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
+}
+
+defineScriptSuite("dashboard-storage", run);

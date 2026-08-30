@@ -6,6 +6,9 @@
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildReportIndex } from "../report/build-index.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 let ok = 0;
 let fail = 0;
@@ -110,6 +113,9 @@ console.log("\nTest 7: Non-existent directory");
   assert(result === false, "Returns false for non-existent dir");
 }
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${ok} passed, ${fail} failed`);
-if (fail > 0) process.exit(1);
+if (fail > 0) {
+  throw new Error(`${fail} assertion(s) failed`);
+}
+}
+
+defineScriptSuite("build-index", run);

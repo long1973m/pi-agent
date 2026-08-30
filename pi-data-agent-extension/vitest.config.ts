@@ -1,51 +1,25 @@
 import { defineConfig } from "vitest/config";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
+
+// Python 绘图环境（T-1）：若存在专用 venv，则前置到 PATH，
+// 使测试内 spawn("python3") 能命中带 matplotlib/pandas/seaborn 的解释器。
+const chartVenvBin = "/Users/mare/.workbuddy/binaries/python/envs/chart/bin";
+const chartPathPrefix = existsSync(chartVenvBin)
+  ? { PATH: `${chartVenvBin}${delimiter}${process.env.PATH ?? ""}` }
+  : {};
 
 export default defineConfig({
   test: {
+    // Python 绘图 venv 注入（visualize / integration 测试依赖）
+    env: chartPathPrefix,
     // 测试文件根目录
     root: ".",
-    // 匹配 src/eval 下的 .test.ts 文件
+    // T-1 统一后：全部测试（原 vitest + node:test + 自定义断言脚本）均为
+    // src/eval 下的 .test.ts 文件，glob 直接收口，无需手工 exclude 黑名单。
+    // fixtures 目录不是测试文件，仅作数据引用。
     include: ["src/eval/**/*.test.ts"],
-    // 排除 run-all 脚本和 fixtures
-    // 约定：vitest 用例必须 import from "vitest"；带顶层 runXXX()+process.exit 的
-    // tsx 独立脚本及 node:test 风格用例不适用 vitest，由 npx tsx / npm run test:legacy 执行
-    exclude: [
-      "src/eval/run-all-v2.ts",
-      "src/eval/fixtures/**",
-      // —— node:test 风格（v0.7/v0.8，按 npx tsx 方式执行）——
-      "src/eval/analysis-report.test.ts",
-      "src/eval/chart-merge.test.ts",
-      "src/eval/dictionary-inference.test.ts",
-      "src/eval/dictionary-inference-api.test.ts",
-      "src/eval/dictionary-review.test.ts",
-      "src/eval/report-path-sync.test.ts",
-      "src/eval/report-quality-gate.test.ts",
-      "src/eval/reports-module-ui.test.ts",
-      "src/eval/sql-history-edit.test.ts",
-      // —— tsx 独立脚本（顶层 runXXX().catch + process.exit）——
-      "src/eval/audit-log.test.ts",
-      "src/eval/build-index.test.ts",
-      "src/eval/business-scenarios.test.ts",
-      "src/eval/caliber.test.ts",
-      "src/eval/connect-database.test.ts",
-      "src/eval/dashboard-api.test.ts",
-      "src/eval/dashboard-security.test.ts",
-      "src/eval/dashboard-storage.test.ts",
-      "src/eval/dictionary-panel.test.ts",
-      "src/eval/failed-query.test.ts",
-      "src/eval/integration-phase1.test.ts",
-      "src/eval/integration-phase2.test.ts",
-      "src/eval/integration-phase3.test.ts",
-      "src/eval/pii-guard.test.ts",
-      "src/eval/regression.test.ts",
-      "src/eval/render-report.test.ts",
-      "src/eval/schema-fingerprint.test.ts",
-      "src/eval/session-report.test.ts",
-      "src/eval/show-image.test.ts",
-      "src/eval/sql-highlight.test.ts",
-      "src/eval/task6-should-have.test.ts",
-      "src/eval/visualize.test.ts",
-    ],
+    exclude: ["src/eval/fixtures/**"],
     // 运行环境（纯逻辑测试用 node 即可）
     environment: "node",
     // 超时时间（部分测试需要初始化 DuckDB）

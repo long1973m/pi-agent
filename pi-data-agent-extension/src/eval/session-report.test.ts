@@ -6,6 +6,9 @@
  */
 
 import { getSessionTranscript, mergeToolResults, type TranscriptMessage } from "../report/session-transcript.js";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
+
+function run(): void {
 
 // ============================================================================
 // Mock 数据
@@ -201,8 +204,9 @@ console.log("\nTest 8: Thinking content not in text");
 // 汇总
 // ============================================================================
 
-console.log(`\n${"=".repeat(40)}`);
-console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
-  process.exit(1);
+  throw new Error(`${failed} assertion(s) failed`);
 }
+}
+
+defineScriptSuite("session-report", run);

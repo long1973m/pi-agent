@@ -9,7 +9,7 @@
  * 5. 正常推断参数校验 → 400 INVALID_MODE
  */
 
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import express from "express";
 import { request } from "node:http";

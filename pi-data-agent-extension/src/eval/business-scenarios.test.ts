@@ -22,6 +22,7 @@ import type { ToolContext } from "../tools/tool-context.js";
 import { existsSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
+import { defineScriptSuite } from "./helpers/vitest-suite.js";
 
 const TEST_CWD = cwd();
 const FIXTURES_DIR = join(TEST_CWD, "src", "eval", "fixtures");
@@ -51,6 +52,8 @@ async function runBusinessScenarioTests(): Promise<void> {
   // Setup: 初始化引擎 + 加载业务数据
   // ========================================================================
   const config = loadConfig();
+  // S-1 fail-closed（v0.11）：headless 测试无 UI，写操作需显式放行（spec v0.11 §13）
+  config.autoConfirmWrite = true;
   const persistence = new PersistenceManager(config.globalConfigDir, config.projectConfigDir);
   // 清理旧字典，避免状态污染
   persistence.saveDataDictionary([], "project");
@@ -99,8 +102,7 @@ async function runBusinessScenarioTests(): Promise<void> {
     const filePath = join(FIXTURES_DIR, ds.file);
     if (!existsSync(filePath)) {
       console.error(`  ❌ Missing fixture: ${filePath}`);
-      console.log("\n=== Results: 0 passed, setup failed ===");
-      process.exit(1);
+      throw new Error(`Missing fixture: ${filePath}`);
     }
     const result = await loadTool.execute("test", { file_path: filePath }, undefined, undefined, mockCtx);
     const details = result.details as Record<string, any> | undefined;
@@ -278,10 +280,9 @@ async function runBusinessScenarioTests(): Promise<void> {
   if (b7PngPath && existsSync(b7PngPath)) unlinkSync(b7PngPath);
 
   console.log(`\n=== Business Scenario Eval: ${passed} passed, ${failed} failed ===`);
-  process.exit(failed > 0 ? 1 : 0);
+  if (failed > 0) {
+    throw new Error(`${failed} assertion(s) failed`);
+  }
 }
 
-runBusinessScenarioTests().catch((err) => {
-  console.error("Business scenario test error:", err);
-  process.exit(1);
-});
+defineScriptSuite("business-scenarios", runBusinessScenarioTests);
