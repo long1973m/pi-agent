@@ -183,11 +183,23 @@ export async function executeWithRecovery<T>(
             notify(`Auto-fix failed: ${fixErrorMsg.slice(0, 80)}, retrying original...`);
           }
         } else {
-          const fixAttempt = `Retry ${retryCount + 1}: ${fullError.slice(0, 100)}`;
-          attemptedFixes.push(fixAttempt);
-          notify(
-            `Error (attempt ${retryCount + 1}/${cfg.maxRetries}): ${fullError.slice(0, 100)}... Retrying...`
-          );
+          // F-bug①（v0.11）：无 autoFixFn 时重试必然复现确定性错误（如 SQL 语法错），
+          // 纯浪费——失败立即返回，不再盲目重试（retryCount=0 语义）。
+          notify(`Error (no auto-fix available): ${fullError.slice(0, 100)}`);
+          const debugCtx = await gatherDebugContext(context);
+          return {
+            error: fullError,
+            retried: false,
+            retryCount: 0,
+            attemptedFixes,
+            debugContext: debugCtx
+              ? {
+                  ...debugCtx,
+                  errorMessage: fullError,
+                  attemptedFixes,
+                }
+              : undefined,
+          };
         }
       } else {
         notify(`All ${cfg.maxRetries} retry attempts failed.`);

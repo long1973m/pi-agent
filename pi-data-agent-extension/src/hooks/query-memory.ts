@@ -84,11 +84,15 @@ export class QueryMemoryManager {
   /** 失败查询最大保留条数 */
   private static readonly MAX_FAILED_ENTRIES = 10;
 
-  constructor(persistence: PersistenceManager) {
+  constructor(persistence: PersistenceManager, maxEntries?: number) {
     this.persistence = persistence;
     // 尝试从持久化加载
     const loaded = persistence.loadQueryMemory("project");
     this.memory = loaded ?? { maxEntries: 5, entries: [] };
+    // F-1（v0.11）：maxQueryMemoryEntries 配置实际生效——显式传入时覆盖持久化值/默认值
+    if (maxEntries !== undefined && Number.isFinite(maxEntries) && maxEntries > 0) {
+      this.memory.maxEntries = maxEntries;
+    }
     // 加载失败查询
     this.loadFailedQueries();
   }

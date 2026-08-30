@@ -361,6 +361,7 @@ export class DuckDBEngine {
         if (rows.length > 0 && rows[0][0] != null && rows[0][0] !== 0) {
           // estimated_size 是可用的快速行数来源
           rowCount = typeof rows[0][0] === "bigint" ? Number(rows[0][0]) : parseInt(String(rows[0][0]), 10);
+          estimated = true; // F-1（v0.11）：行数来自估算路径时正确标记，load-data 的 "~N" 显示依赖此标记
         } else {
           // 回退到精确 COUNT(*)
           const countResult = await this.connection!.runAndReadAll(

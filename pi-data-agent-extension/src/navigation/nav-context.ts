@@ -118,10 +118,10 @@ export function renderMetricsSection(
 /**
  * 渲染完整 L0 导航段。
  *
- * 预算策略（规范 §6.1）：
+ * 预算策略（规范 §6.1，v0.11 F-1 修订）：
  * 1. 表清单逐行渲染；超预算 → 折叠为分类标签 + 工具下钻提示
- * 2. 追加 pinned 与指标小节
- * 3. 最终仍超预算则硬截断（保证常驻段有上界）
+ * 2. pinned 与指标小节先渲染并预留预算空间，不参与截断
+ * 3. 硬截断只作用于表清单部分（保证常驻段有上界，且 pinned 不被截掉）
  *
  * 无表时返回 ""（不注入空段）。
  */
@@ -138,11 +138,17 @@ export function renderNavContext(input: {
     "\n\n## Data Navigation\n\n" +
     "Loaded datasets (call get_table_card with a table name for purpose/boundaries/field meanings):\n";
 
+  // F-1（v0.11）：预算截断不再一刀切切掉尾部——pinned / 指标段先渲染并预留空间，
+  // 截断只作用于表清单部分，保证用户固定的高频分析不被兜底截断丢弃。
+  const pinnedSection = renderPinnedSection(input.pinned ?? []);
+  const metricsSection = renderMetricsSection(input.metrics ?? []);
+  const tableBudget = NAV_CHAR_BUDGET - pinnedSection.length - metricsSection.length;
+
   let tableBody: string;
   const lines = tables.map((t) => renderNavLine(t, cards.get(t.name)));
   const fullList = lines.join("\n");
 
-  if (header.length + fullList.length <= NAV_CHAR_BUDGET) {
+  if (header.length + fullList.length <= tableBudget) {
     tableBody = fullList;
   } else {
     // 超预算：只列分类标签并提示下钻
@@ -168,10 +174,8 @@ export function renderNavContext(input: {
       `请勿猜测表内容——需要任何表的信息时，先调用 get_table_card 工具查看详情。`;
   }
 
-  let result = header + tableBody;
-  result += renderPinnedSection(input.pinned ?? []);
-  result += renderMetricsSection(input.metrics ?? []);
+  // 表清单部分（header + body）在扣除 pinned/指标预留后的预算内硬截断（防御极端长文本）
+  const tableSection = truncateToBudget(header + tableBody, Math.max(tableBudget, header.length + 1));
 
-  // 最终兜底截断：保证常驻导航段 ≤ 预算（pinned/指标各自有条数上限，此处防御极端长文本）
-  return truncateToBudget(result, NAV_CHAR_BUDGET);
+  return tableSection + pinnedSection + metricsSection;
 }

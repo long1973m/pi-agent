@@ -136,7 +136,11 @@ def chart_scatter(df: pd.DataFrame, config: dict) -> dict:
     if color_col and color_col in df.columns:
         # 分类着色
         categories = df[color_col].unique()
-        cmap = plt.cm.get_cmap("tab10", len(categories))
+        # matplotlib >= 3.9 移除了 plt.cm.get_cmap，改用 colormap 注册表 API，旧版本回退
+        try:
+            cmap = plt.colormaps["tab10"].resampled(len(categories))
+        except AttributeError:
+            cmap = plt.cm.get_cmap("tab10", len(categories))
         for i, cat in enumerate(categories):
             subset = df[df[color_col] == cat]
             ax.scatter(subset[x_col], subset[y_col], label=str(cat), alpha=0.7)

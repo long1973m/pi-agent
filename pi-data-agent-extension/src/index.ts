@@ -122,7 +122,8 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
 
     // 5. 初始化 Phase 3 管理器
     const dataDictionary = new DataDictionaryManager(persistence);
-    const queryMemory = new QueryMemoryManager(persistence);
+    // F-1（v0.11）：maxQueryMemoryEntries 配置传入生效（此前构造函数固定 5 未消费配置）
+    const queryMemory = new QueryMemoryManager(persistence, config.maxQueryMemoryEntries);
     logger.debug("Phase 3 managers initialized");
 
     // 5.2 v0.10 A-3: 初始化表卡片存储
