@@ -33,6 +33,10 @@
 | 视觉整体翻新（卡片/留白/字号层级） | v0.10 §9 | 未开始 | 等信息架构稳定后一次做，避免返工 |
 | L2 即时注入（query_data 自动附卡片/指标） | v0.10 §9.1 | 设计已预埋，未实施 | 触发条件/已交付清单/预算（≤200 token、2 张表）设计完成，待 A-3/A-4 使用反馈 |
 | MCP 服务暴露知识库 | v0.10 §9 | 未开始 | 仅当需要 pi 之外 Agent 共享时再做 |
+| SQL Server 接入（mssql 社区扩展） | v0.12 调研（research/other-database-support-research.md §2） | 未开始 | 触发条件=真实需求。127★/活跃/MIT【GitHub API 2026-08-31】；secret type、超时默认值🔴待验证；注意 community 扩展与 DuckDB 版本配对风险 |
+| MongoDB / ClickHouse 旁路物化 | v0.12 调研（同上 §2） | 未开始 | 无 DuckDB 扩展；走「导出→NDJSON→read_json_auto 落表」，复用文件导入管线，2–3 人天/个 |
+| KingbaseES 兼容性验证 | v0.12 调研（同上 §2） | 未开始 | 国产化需求出现时验证：PG 协议兼容，理论上 postgres 扩展可直接 ATTACH，🔴待验证 |
+| 达梦 DM8 接入 | v0.12 调研（同上 §2） | 未开始 | 无专属扩展；ODBC 路径需目标机装驱动，运维成本高，仅等合规类客户真需求 |
 
 ## 工程与技术债
 
