@@ -12,7 +12,7 @@
  * MVP 简化：无 LLM 接入，基于列名模式做基础推断
  */
 
-import type { DataDictionaryEntry, ColumnSemantic, ColumnSemanticStatus, DictionaryInferenceMode, DictionarySuggestion } from "../types.js";
+import type { DataDictionaryEntry, ColumnSemantic, ColumnSemanticStatus, DictionaryInferenceMode, DictionarySuggestion, PersistenceLevel } from "../types.js";
 import type { PersistenceManager } from "../persistence.js";
 import type { DuckDBEngine } from "../engine/duckdb.js";
 import { createHash } from "node:crypto";
@@ -77,6 +77,33 @@ export class DataDictionaryManager {
   /** 获取所有字典 */
   getAllDictionaries(): DataDictionaryEntry[] {
     return Array.from(this.cache.values());
+  }
+
+  /**
+   * 删除表字典（表被 DROP 后清理孤儿条目）。
+   *
+   * 字典按 global → project → session 三级合并（loadMergedDataDictionary），
+   * 只删内存 cache 会在下次加载时被高层级同名条目"复活"，
+   * 故必须逐级落盘移除。**只回写确实包含该表的级别**——
+   * saveDataDictionary([]) 语义是"该级别已明确清空"，误写会连带清空无关表。
+   *
+   * @returns 是否确实删除了条目（原本不存在返回 false，幂等）
+   */
+  removeDictionary(tableName: string): boolean {
+    if (!this.cache.has(tableName)) return false;
+    this.cache.delete(tableName);
+
+    const levels: PersistenceLevel[] = ["global", "project", "session"];
+    for (const level of levels) {
+      const entries = this.persistence.loadDataDictionary(level);
+      if (!entries || entries.length === 0) continue;
+      const filtered = entries.filter((e) => e.tableName !== tableName);
+      // 该级别没有这张表 → 不回写，避免用空数组误清空整级
+      if (filtered.length === entries.length) continue;
+      this.persistence.saveDataDictionary(filtered, level);
+    }
+
+    return true;
   }
 
   /** 计算 schema fingerprint（MD5 of DESCRIBE result + row count） */

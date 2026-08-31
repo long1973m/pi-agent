@@ -180,6 +180,22 @@ export class TableCardStore {
     return true;
   }
 
+  /**
+   * 删除表卡片（表被 DROP 后清理孤儿卡片）。
+   *
+   * 与 markStaleIfChanged 同样跳过 revision 检查：删除由后端单方发起，
+   * 前端不持有期望版本号。卡片不存在时返回 false（幂等）。
+   */
+  remove(tableName: string): boolean {
+    const data = this.atomicStore.read();
+    const cards = data?.data ?? [];
+    const nextCards = cards.filter((c) => c.tableName !== tableName);
+    if (nextCards.length === cards.length) return false;
+
+    this.atomicStore.write(nextCards, -1, `table-card:${tableName}:remove`);
+    return true;
+  }
+
   private writeAuditLog(entry: { action: string; target: string; before?: string; after?: string }): void {
     try {
       mkdirSync(dirname(this.auditLogPath), { recursive: true });

@@ -1546,6 +1546,8 @@
       try {
         const res = await api.fetch("/datasets");
         const datasets = res.data;
+        // 缓存列表，删除确认弹窗用它展示表规模
+        this.lastDatasets = datasets;
 
         if (datasets.length === 0) {
           // v0.11 P2: 富空态（沿用原提示文案 + 上传行动按钮）
@@ -1584,8 +1586,9 @@
                 <option value="200">200</option>
               </select>
             </div>
-            <div style="padding-top:20px">
+            <div style="padding-top:20px;display:flex;gap:8px">
               <button class="btn btn-sm" onclick="DatasetsModule.loadStats()">列统计</button>
+              <button class="btn btn-sm btn-danger" onclick="DatasetsModule.deleteCurrent()" title="从 DuckDB 中永久删除该表">删除表</button>
             </div>
           </div>
         `;
@@ -1613,6 +1616,74 @@
         }
       } catch (err) {
         showError("datasets-content", `加载失败: ${err.message}`);
+      }
+    },
+
+    /**
+     * 删除当前选中的表（v0.12）
+     *
+     * DROP TABLE 不可逆，故前端走 showConfirm 强确认，后端另要求 body.confirm === 表名，
+     * 双重防误触。删表只作用于 DuckDB main schema（外部 ATTACH 库不在可选列表里），
+     * 源文件与 SQL 历史保留。
+     *
+     * 删除后联动：清 localStorage 选中态 → 重载列表 → 跟随到剩余首表
+     * （表卡片/字段字典分区同步切过去，避免仍指向已删表）。
+     */
+    async deleteCurrent() {
+      const select = document.getElementById("dataset-select");
+      const table = select ? select.value : this.currentTableName;
+      if (!table) {
+        showToast("请先选择要删除的数据表", "warning");
+        return;
+      }
+
+      // 有未保存的字典/卡片编辑时，删表会让这些编辑失去目标——复用既有丢弃语义
+      if (!(await EditGuard.confirmDiscard("删除表将丢失未保存的修改，确定继续？"))) return;
+
+      const meta = (this.lastDatasets || []).find((d) => d.name === table);
+      const sizeHint = meta ? `${meta.rowCount} 行 × ${meta.columnCount} 列` : "规模未知";
+
+      const ok = await showConfirm(
+        `确定要永久删除数据表「${table}」吗？`,
+        {
+          title: "删除数据表",
+          confirmText: "永久删除",
+          cancelText: "取消",
+          detail: [
+            `规模：${sizeHint}`,
+            "",
+            "此操作不可撤销，表将从 DuckDB 中彻底移除。",
+            "同时清理：查询缓存、表卡片、数据字典条目。",
+            "上传的源数据文件不会被删除。",
+          ].join("\n"),
+        }
+      );
+      if (!ok) return;
+
+      try {
+        await api.fetch(`/datasets/${encodeURIComponent(table)}`, {
+          method: "DELETE",
+          body: JSON.stringify({ confirm: table }),
+        });
+
+        // 清掉指向已删表的选中态，否则下次进入会选中一张不存在的表
+        if (localStorage.getItem("dashboard-last-dataset") === table) {
+          localStorage.removeItem("dashboard-last-dataset");
+        }
+        this.currentProfile = null;
+        this.currentTableName = null;
+
+        showToast(`已删除表「${table}」`, "success");
+        await this.load();
+
+        // load() 已选好剩余首表并写入 currentTableName，据此联动其余分区
+        const next = this.currentTableName;
+        if (next) {
+          TableCardsModule.setTable(next);
+          DictionariesModule.setTable(next);
+        }
+      } catch (err) {
+        showToast(`删除失败: ${err.message}`, "error");
       }
     },
 
