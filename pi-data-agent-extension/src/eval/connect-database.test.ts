@@ -112,9 +112,10 @@ async function runConnectDatabaseTests(): Promise<void> {
 
   // ========================================================================
   // CDB3: db_type 不支持被拒绝
+  // v0.12 M-5: mysql 已是合法类型（走白名单/凭据分支），改用 postgres 验证
   // ========================================================================
   console.log("\n[CDB3] Unsupported db_type rejected");
-  const result3 = await connectTool.execute("test-cdb3", { db_type: "mysql", file_path: sqlitePath }, undefined, undefined, mockCtx);
+  const result3 = await connectTool.execute("test-cdb3", { db_type: "postgres", file_path: sqlitePath }, undefined, undefined, mockCtx);
   assert("unsupported: rejected", (result3.details as any)?.error === "unsupported_db_type");
 
   // ========================================================================
