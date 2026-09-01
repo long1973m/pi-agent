@@ -5,6 +5,9 @@
  * 1. 路径白名单 — 阻止访问允许路径之外的文件
  * 2. SQL 黑名单 — 拦截无条件的危险写操作（DROP/DELETE/TRUNCATE/UPDATE 无 WHERE）
  * 3. 读写确认门控 — 写操作（INSERT/CREATE/UPDATE/DELETE/DROP）需用户确认
+ * 4. 远程目标白名单 — ATTACH 远程数据库仅限 dbAllowedHosts（v0.12 M-2，fail-closed）
+ * 5. 模型侧 ATTACH/DETACH 拦截 — 远程连接只允许出现在工具实现层（v0.12 M-3）
+ * 6. 凭据脱敏 — 错误文本/审计日志中的连接凭据统一遮蔽（v0.12 M-6）
  *
  * 验收标准：
  * - 越界路径 → requiresConfirm
@@ -60,6 +63,39 @@ export function resolveConfirmGate(
   };
 }
 
+// ==========================================================================
+// 凭据脱敏（v0.12 M-6）
+// ==========================================================================
+
+/**
+ * 遮蔽文本中的连接凭据（v0.12 M-6）
+ *
+ * 覆盖四类模式：
+ * 1. password=... / password: ... / PASSWORD '...'（含连接串与 CREATE SECRET 片段）
+ * 2. PWD ...（MySQL 环境变量风格）
+ * 3. IDENTIFIED BY ...（MySQL 账号语句）
+ * 4. pwd=...（DuckDB sqlite/mysql attach 连接串参数）
+ *
+ * 用于工具返回文本与审计日志落盘前兜底；凭据永远只应进 temporary secret，
+ * 本函数是错误信息携带凭据时的最后一道防线。
+ */
+export function redactCredentials(text: string): string {
+  if (!text) return text;
+  return text
+    // password=xxx / password: xxx / PASSWORD 'xxx'（值含引号串或裸 token）
+    .replace(
+      /(password\s*[=:]\s*)('(?:[^']|'')*'|"(?:[^"]|"")*"|[^\s,;)\]]+)/gi,
+      "$1***"
+    )
+    // PWD xxx（env 风格）
+    .replace(/\b(PWD\s+)([^\s,;)\]]+)/gi, "$1***")
+    // IDENTIFIED BY xxx
+    .replace(
+      /\b(identified\s+by\s+)('(?:[^']|'')*'|"(?:[^"]|"")*"|[^\s,;)\]]+)/gi,
+      "$1***"
+    );
+}
+
 /** 安全层检查器 */
 export class SecurityChecker {
   private config: SecurityConfig;
@@ -71,6 +107,11 @@ export class SecurityChecker {
   /** 更新配置（热更新） */
   updateConfig(config: SecurityConfig): void {
     this.config = config;
+  }
+
+  /** v0.12 M-1: 远程查询超时毫秒（connect_database 传给 attachRemote 用） */
+  get dbQueryTimeoutMs(): number {
+    return this.config.dbQueryTimeoutMs;
   }
 
   // ==========================================================================
@@ -116,6 +157,62 @@ export class SecurityChecker {
   }
 
   // ==========================================================================
+  // 远程目标白名单（v0.12 M-2）
+  // ==========================================================================
+
+  /**
+   * 检查远程数据库连接目标是否在 dbAllowedHosts 白名单内
+   *
+   * 语义（fail-closed，无 confirm 态——远程连接没有"顺手确认"的合理性）：
+   * - 白名单空 → 一律 block（默认配置拒绝一切远程连接，现有纯本地用户行为零变化）
+   * - 条目含 :port → host 与 port 必须同时命中
+   * - 条目仅 host → 任意端口命中
+   * - host 大小写不敏感；localhost 与 127.0.0.1 不视为等价（写哪条算哪条，避免隐式扩权）
+   *
+   * 独立入口、不塞进 checkSql：与 SQL 读写分类是两个正交的关注点。
+   */
+  checkRemoteTarget(host: string, port: number): SecurityCheckResult {
+    const whitelist = this.config.dbAllowedHosts ?? [];
+    const normalizedHost = String(host ?? "").trim().toLowerCase();
+
+    if (normalizedHost.length === 0) {
+      return {
+        action: "block",
+        reason: "远程目标 host 为空，已拒绝连接。",
+      };
+    }
+
+    for (const entry of whitelist) {
+      const e = String(entry ?? "").trim().toLowerCase();
+      if (e.length === 0) continue;
+      const colonIdx = e.lastIndexOf(":");
+      const hasPort = colonIdx > 0 && /^\d+$/.test(e.slice(colonIdx + 1));
+      if (hasPort) {
+        const entryHost = e.slice(0, colonIdx);
+        const entryPort = parseInt(e.slice(colonIdx + 1), 10);
+        if (entryHost === normalizedHost && entryPort === port) {
+          return { action: "allow" };
+        }
+      } else if (e === normalizedHost) {
+        return { action: "allow" };
+      }
+    }
+
+    const shown =
+      whitelist.length > 0
+        ? whitelist.join(", ")
+        : "（当前为空，即拒绝一切远程连接）";
+    return {
+      action: "block",
+      reason:
+        `Remote target "${host}:${port}" is not in the allowed database hosts whitelist. ` +
+        `Current whitelist: ${shown}. ` +
+        `To allow this target, set env PI_DATA_AGENT_DB_ALLOWED_HOSTS (semicolon-separated, ` +
+        `e.g. "db.internal:3306;10.0.0.5") or add "dbAllowedHosts" in .pi-data-agent/config.json.`,
+    };
+  }
+
+  // ==========================================================================
   // SQL 检查
   // ==========================================================================
 
@@ -142,6 +239,22 @@ export class SecurityChecker {
           matchedPattern: pattern.source,
         };
       }
+    }
+
+    // 1.5 ATTACH/DETACH 拦截（v0.12 M-3）
+    //
+    // READ_ONLY 只是客户端约束——模型可自行发起不带 READ_ONLY 的 ATTACH 绕过。
+    // 设计定死：ATTACH 只允许出现在工具实现层（engine.exec 直达，不经 checkSql），
+    // 模型侧任何 ATTACH/DETACH 一律 block。
+    // 位置刻意先于 autoConfirmWrite 判定（下方 dangerous/write 分支）：
+    // dangerous 级的 ATTACH 不受自动确认豁免。
+    const attachReason = this.findAttachViolation(normalized);
+    if (attachReason) {
+      return {
+        action: "block",
+        reason: attachReason,
+        matchedPattern: "\\bATTACH\\b|\\bDETACH\\b",
+      };
     }
 
     // 2. SQL 内嵌文件路径白名单检查
@@ -220,6 +333,29 @@ export class SecurityChecker {
         }
         // confirm 视为放行（checkOperation 层已有独立的 confirm 流程），仅 block 生效
       }
+    }
+    return null;
+  }
+
+  /**
+   * 检测语句中的 ATTACH/DETACH（v0.12 M-3）
+   *
+   * 与 classifySql 相同的清洗策略：先剥离注释（注释里出现的 ATTACH 不会执行，不误报），
+   * 再剥离字符串字面量与双引号标识符（避免 'please attach this' 类字面量误报），
+   * 然后在剩余骨架上匹配 ATTACH/DETACH 关键词——多行语句同样命中。
+   */
+  private findAttachViolation(sql: string): string | null {
+    const skeleton = sql
+      .replace(/--.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/'(?:[^']|'')*'/g, "''")
+      .replace(/"(?:[^"]|"")*"/g, '""');
+    if (/\bATTACH\b/i.test(skeleton) || /\bDETACH\b/i.test(skeleton)) {
+      return (
+        "ATTACH/DETACH is not allowed in model-issued SQL. " +
+        "Remote/local database connections must go through the connect_database tool " +
+        "(ATTACH at the tool implementation layer only, enforced READ_ONLY there)."
+      );
     }
     return null;
   }

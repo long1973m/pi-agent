@@ -86,6 +86,10 @@ export interface SecurityConfig {
   dangerousSqlPatterns: RegExp[];
   /** 越界路径是否拦截 */
   blockOutOfBoundsPath: boolean;
+  /** v0.12 M-1: 允许 ATTACH 的远程数据库目标白名单（host 或 host:port）；空 = 拒绝一切远程 */
+  dbAllowedHosts: string[];
+  /** v0.12 M-1: 远程查询超时（毫秒） */
+  dbQueryTimeoutMs: number;
 }
 
 /** 安全检查动作 */

@@ -39,6 +39,10 @@ export interface AppConfig {
   samplingStrategy: "random" | "limit";
   /** 调试日志开关（env PI_DATA_AGENT_DEBUG 或 config.json，默认 false） */
   debug: boolean;
+  /** v0.12 M-1: 允许 ATTACH 的远程数据库目标白名单；支持 host 与 host:port 两种格式；空 = 拒绝一切远程连接（fail-closed） */
+  dbAllowedHosts: string[];
+  /** v0.12 M-1: 远程查询超时（毫秒），传给 mysql_query_timeout_max_ms；夹紧 5_000 ~ 600_000 */
+  dbQueryTimeoutMs: number;
 }
 
 /** 默认配置 */
@@ -57,6 +61,8 @@ const DEFAULTS: Readonly<AppConfig> = {
   visualizeMaxRows: 5000,
   samplingStrategy: "random",
   debug: false,
+  dbAllowedHosts: [],
+  dbQueryTimeoutMs: 300000,
 };
 
 /** 环境变量映射 */
@@ -70,6 +76,8 @@ const ENV_MAP: Record<string, keyof AppConfig> = {
   PI_DATA_AGENT_VISUALIZE_MAX_ROWS: "visualizeMaxRows",
   PI_DATA_AGENT_SAMPLING_STRATEGY: "samplingStrategy",
   PI_DATA_AGENT_DEBUG: "debug",
+  PI_DATA_AGENT_DB_ALLOWED_HOSTS: "dbAllowedHosts",
+  PI_DATA_AGENT_DB_QUERY_TIMEOUT_MS: "dbQueryTimeoutMs",
 };
 
 /** 从环境变量读取配置 */
@@ -98,6 +106,16 @@ function readFromEnv(): Partial<AppConfig> {
         break;
       case "samplingStrategy":
         result[configKey] = value === "limit" ? "limit" : "random";
+        break;
+      case "dbAllowedHosts":
+        // 分号分隔，与 PI_DATA_AGENT_ALLOWED_PATHS 风格一致；空字符串/纯空白 → 空数组（拒绝一切远程）
+        result.dbAllowedHosts = value
+          .split(";")
+          .map((h) => h.trim())
+          .filter((h) => h.length > 0);
+        break;
+      case "dbQueryTimeoutMs":
+        result.dbQueryTimeoutMs = parseInt(value, 10);
         break;
       default:
         // @ts-expect-error — string fields
@@ -161,6 +179,10 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
   merged.outputDir = resolve(merged.cwd, merged.outputDir);
   merged.uploadsDir = resolve(merged.cwd, merged.uploadsDir);
 
+  // v0.12 M-1: 远程查询超时夹紧（5 秒 ~ 10 分钟）
+  if (!Number.isFinite(merged.dbQueryTimeoutMs)) merged.dbQueryTimeoutMs = 300000;
+  merged.dbQueryTimeoutMs = Math.min(600_000, Math.max(5_000, Math.round(merged.dbQueryTimeoutMs)));
+
   // 确保 uploads 目录始终在白名单中（上传功能的必要条件）
   if (!merged.allowedPaths.some((p) => p === merged.uploadsDir)) {
     merged.allowedPaths.push(merged.uploadsDir);
@@ -196,5 +218,7 @@ export function toSecurityConfig(config: AppConfig): SecurityConfig {
       /^\s*TRUNCATE\s+TABLE\s+\w+\s*;?\s*$/i,
     ],
     blockOutOfBoundsPath: true,
+    dbAllowedHosts: config.dbAllowedHosts,
+    dbQueryTimeoutMs: config.dbQueryTimeoutMs,
   };
 }
