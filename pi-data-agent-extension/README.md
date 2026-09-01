@@ -2,7 +2,7 @@
 
 基于 [Pi Extension API](https://pi.dev) + DuckDB 的数据分析智能体扩展：让 Pi 具备加载数据、SQL 查询、可视化、生成报告的完整分析能力，并以数据字典、查询记忆、表卡片三层知识库沉淀分析资产。
 
-当前版本：**v0.11**（安全收口 + 工程健康）。
+当前版本：**v0.12**（MySQL 只读连接 + 多方言基座）。
 
 ## 功能概览
 
@@ -12,6 +12,7 @@
 - **可视化**：matplotlib 静态图（bar/line/scatter/histogram/pie/box/heatmap），Python 失败时自动回退 CSV
 - **报告**：会话报告（HTML 单文件离线自包含）+ 正式分析报告（executive/detailed，证据覆盖度质量门）
 - **Dashboard**：本地 Web 界面，浏览报告、管理数据字典与指标口径
+- **外部数据库**：MySQL 远程只读连接（v0.12），SQLite 本地文件；ATTACH 架构，远程表即普通 DuckDB 表，15 个工具全链路复用
 
 ## 工具清单
 
@@ -26,7 +27,7 @@
 | export_result | 导出查询结果 |
 | visualize | 生成统计图表 |
 | show_image | 在 TUI 展示图片 |
-| connect_database | 连接外部数据库（开发中） |
+| connect_database | 连接外部数据库（sqlite 文件 / MySQL 只读远程） |
 | confirm_dictionary | 数据字典确认入口 |
 | generate_report | 生成正式分析报告 |
 | generate_session_report | 生成会话报告 |
@@ -51,6 +52,32 @@ npm run test:coverage
 ```
 
 v0.11 起测试统一到 vitest（含 DuckDB 单连接串行约束，singleFork）。
+
+## 数据库连接（v0.12）
+
+`connect_database` 支持两类目标：
+
+```text
+# SQLite 本地文件
+connect_database(db_type="sqlite", file_path="/path/to/data.db")
+
+# MySQL 远程（只读）
+connect_database(db_type="mysql", host="db.internal", port=3306, user="analyst", database="sales")
+```
+
+**MySQL 只读语义与配置**：
+
+1. **连接强制 READ_ONLY**（客户端约束）。服务端账号请使用 `GRANT SELECT ONLY`——客户端 READ_ONLY 不是安全边界。写入远程库不支持，此类请求应拒绝。
+2. **白名单前置**：只有 `dbAllowedHosts` 白名单内的 host 才允许连接，**默认空 = 拒绝一切远程**。配置方式（二选一）：
+   - env：`PI_DATA_AGENT_DB_ALLOWED_HOSTS="db.internal:3306;10.0.0.5"`（分号分隔，支持 `host` 与 `host:port` 两种格式；`localhost` 与 `127.0.0.1` 视为不同目标）
+   - config.json（`.pi-data-agent/config.json`）：`{ "dbAllowedHosts": ["db.internal:3306"] }`
+3. **凭据三种配置方式**（密码永不作为工具参数——工具参数会整体进入模型上下文）：
+   - env `PI_DATA_AGENT_MYSQL_PWD`（项目命名空间，优先）
+   - env `MYSQL_PWD`（DuckDB mysql 扩展原生识别）
+   - 交互模式下弹出密码输入框（结果仅存入 temporary secret，不落盘）
+4. **查询超时**：`dbQueryTimeoutMs`（默认 300000，夹紧 5s~10min），传给 `mysql_query_timeout_max_ms`。
+5. **离线环境**：首次连接需下载 mysql/sqlite 扩展（约 10MB）。离线时预置扩展到 `~/.duckdb/extensions/<duckdb版本>/<os>_<arch>/`，或 `SET extension_directory` 指向本地目录。
+6. **已知精度坑**：MySQL `DECIMAL(p>38)` 列落地为 DOUBLE（DuckDB 上限 DECIMAL(38)）；`mysql_query()` 表函数因 issue #65 禁用，统一走 ATTACH。
 
 ## 目录结构
 
@@ -78,7 +105,7 @@ pi-data-agent-extension/
 
 ## 安全模型
 
-一句话：**写操作确认门 fail-closed（无 UI 环境不静默放行）、SQL 内嵌路径白名单 + 危险操作拦截、Dashboard 仅绑定本地回环并叠 Origin 校验 / 速率限制 / 安全响应头 / 写令牌四层中间件。**
+一句话：**写操作确认门 fail-closed（无 UI 环境不静默放行）、SQL 内嵌路径白名单 + 危险操作拦截、模型侧 ATTACH/DETACH 一律拦截（远程连接只允许走 connect_database 工具实现层）、远程目标白名单 fail-closed（默认拒绝一切远程）、凭据不进工具参数/错误文本/审计日志（redactCredentials 兜底）、Dashboard 仅绑定本地回环并叠 Origin 校验 / 速率限制 / 安全响应头 / 写令牌四层中间件。**
 
 ## 版本历史
 
