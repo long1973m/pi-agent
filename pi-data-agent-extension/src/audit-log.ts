@@ -11,6 +11,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, renameSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { maskPII } from "./pii-guard.js";
+import { redactCredentials } from "./security.js";
 import { createLogger } from "./utils/logger.js";
 
 const logger = createLogger("audit-log");
@@ -208,13 +209,14 @@ export class AuditLogManager {
       toolCallId,
       timestamp: new Date().toISOString(),
       toolName,
-      action: summary,
       actor: "user",
       durationMs,
       result: resultStatus,
-      summary,
-      userIntent: rawIntent ? maskPII(rawIntent).masked : undefined,
-      sql: rawSql ? maskPII(rawSql).masked : undefined,
+      // v0.12 M-6: 落盘前兜底凭据脱敏（防其他工具未来引入连接串）
+      action: redactCredentials(summary),
+      summary: redactCredentials(summary),
+      userIntent: rawIntent ? redactCredentials(maskPII(rawIntent).masked) : undefined,
+      sql: rawSql ? redactCredentials(maskPII(rawSql).masked) : undefined,
     };
   }
 
