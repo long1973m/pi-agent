@@ -1940,3 +1940,34 @@ body {
     transition: none !important;
   }
 }
+
+/* ========================================================================
+ * v0.12 M-8: 连接指示器（侧栏底部）——界面上能看出"正在连外网"
+ * ======================================================================== */
+
+.connection-indicator {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.conn-pill {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-low);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn-pill.conn-active {
+  color: var(--success);
+  border-color: var(--success-subtle);
+  background: var(--success-subtle);
+}

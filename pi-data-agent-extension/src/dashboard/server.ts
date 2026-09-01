@@ -41,6 +41,7 @@ import { createSqlHistoryRouter } from "./routes/sql-history.js";
 import { createMetricsRouter } from "./routes/metrics.js";
 import { createUploadRouter } from "./routes/upload.js";
 import { createTableCardsRouter } from "./routes/table-cards.js";
+import { createConnectionsRouter } from "./routes/connections.js";
 
 import type { DuckDBEngine } from "../engine/duckdb.js";
 import type { DataDictionaryManager } from "../hooks/data-dictionary.js";
@@ -130,6 +131,8 @@ export async function createDashboardServer(
 
   // ======== API 路由 ========
   app.use(createHealthRouter(writeToken));
+  // v0.12 M-8: 连接视图（活跃远程连接 + 白名单，只读无需写令牌）
+  app.use(createConnectionsRouter(deps.cwd));
 
   // v0.10.1: 上传成功后不再自动触发表卡片 LLM 起草（前端 AI 入口已撤除）；
   // draft API 路由与 ensureTableCard/draftCardWithLLM 函数保留，get_table_card 无卡片时仍有骨架卡兜底

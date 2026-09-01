@@ -2297,12 +2297,41 @@
   window.SqlHistoryModule = SqlHistoryModule;
   window.MetricsModule = MetricsModule;
 
+  // ========================================================================
+  // v0.12 M-8: 连接指示器——活跃远程连接 + 白名单状态（GET /api/connections）
+  // 调研 §5.4-7 要求：界面上能看出"正在连外网"
+  // ========================================================================
+  const ConnectionsModule = {
+    async refresh() {
+      const el = document.getElementById("connection-indicator");
+      if (!el) return;
+      try {
+        const res = await api.fetch("/connections");
+        const { connections, dbAllowedHosts } = res.data;
+        if (connections && connections.length > 0) {
+          el.innerHTML = connections.map((c) =>
+            `<span class="conn-pill conn-active" title="别名 ${escapeHtml(c.alias)} · 只读连接 · ${escapeHtml(c.endpoint)}">🔗 ${escapeHtml(c.dialectType)}: ${escapeHtml(c.endpoint)}</span>`
+          ).join("");
+        } else {
+          const n = (dbAllowedHosts || []).length;
+          const tip = n > 0
+            ? `白名单目标（${n}）: ${escapeHtml(dbAllowedHosts.join(", "))}`
+            : "默认拒绝一切远程连接（dbAllowedHosts 为空）";
+          el.innerHTML = `<span class="conn-pill conn-idle" title="${tip}">远程连接：未启用</span>`;
+        }
+      } catch {
+        el.innerHTML = "";
+      }
+    },
+  };
+
   // Expose to modules
   window.Dashboard = {
     apiFetch: api.fetch.bind(api),
     escapeHtml,
     showToast,
     getWriteToken: () => writeToken,
+    refreshConnections: () => ConnectionsModule.refresh(),
     toggleTheme() {
       const html = document.documentElement;
       const current = html.getAttribute("data-theme");
@@ -2316,6 +2345,8 @@
     refreshPanel(panel) {
       // 重置懒加载标记，强制重新加载
       tabInitialized[panel] = false;
+      // v0.12 M-8: 数据面板刷新时同步刷新连接指示器
+      if (panel === "data") ConnectionsModule.refresh();
       // 添加旋转动画
       const btn = document.querySelector(`#tab-${panel} .panel-refresh-btn`);
       if (btn) {
@@ -2447,6 +2478,9 @@
       } catch { /* 忽略 */ }
 
     console.log("[Dashboard] Initialized");
+
+    // v0.12 M-8: 初始化连接指示器
+    ConnectionsModule.refresh();
 
     // 绑定报告搜索框事件（骨架保留在 DOM 中，只需绑定一次）
     ReportsModule.bindSearchEvents();

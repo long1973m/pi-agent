@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pi Data Agent Dashboard</title>
-<link rel="stylesheet" href="style.css?v=0.11.0">
+<link rel="stylesheet" href="style.css?v=0.12.0">
 <script>
   // 主题初始化（在 CSS 加载前执行，避免闪烁）
   const savedTheme = localStorage.getItem("dashboard-theme") || "dark";
@@ -16,7 +16,9 @@
   <nav class="sidebar">
     <div class="sidebar-header">
       <h1><svg class="sidebar-logo" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect width="16" height="16" rx="4" fill="url(#pda-logo-grad)"/><path d="M4.5 10.5 7 7l2 2 2.5-3.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="pda-logo-grad" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse"><stop stop-color="#8290f9"/><stop offset="1" stop-color="#5865f2"/></linearGradient></defs></svg>Pi Data Agent</h1>
-      <span class="version">v0.11 Dashboard</span>
+      <span class="version">v0.12 Dashboard</span>
+      <!-- v0.12 M-8: 连接指示器——界面上能看出"正在连外网" -->
+      <div class="connection-indicator" id="connection-indicator"></div>
       <button class="btn btn-sm theme-toggle" id="theme-toggle-btn" title="切换亮色/暗色主题" onclick="Dashboard.toggleTheme()" aria-label="切换亮色/暗色主题"><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
     </div>
     <ul class="nav-list">
@@ -161,6 +163,6 @@
   </main>
 </div>
 <div class="toast-container" id="toast-container"></div>
-<script src="app.js?v=0.11.0"></script>
+<script src="app.js?v=0.12.0"></script>
 </body>
 </html>
