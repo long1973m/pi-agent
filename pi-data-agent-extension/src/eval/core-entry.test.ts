@@ -10,7 +10,7 @@
  * 测试约束：stub ExtensionAPI/ExtensionContext，隔离临时目录做 cwd，不触碰共享状态。
  */
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -110,21 +110,22 @@ describe("index.ts 入口装配（T-3）", () => {
     const { pi, handlers } = makeStubPi();
     await (factory as (pi: unknown) => Promise<void>)(pi);
 
-    // 注：config.ts 的 DEFAULTS 把 projectConfigDir/dbPath 算成模块加载时的绝对路径，
-    // cwd 覆盖无法隔离这些目录；此处用 env 覆盖 dbPath 到临时文件，
-    // 以「DuckDB 文件被真实创建」作为 session_start 全链路初始化的可观测副作用。
-    const dbPath = join(freshTmp(), "session.duckdb");
-    process.env.PI_DATA_AGENT_DB_PATH = dbPath;
+    // 用隔离 cwd 作为可观测副作用：session_start 全链路初始化后
+    // DuckDB 文件应按「cwd/.pi-data-agent/session.duckdb」默认路径真实落盘。
+    const cwd = freshTmp();
+    const dbPath = join(cwd, ".pi-data-agent", "session.duckdb");
+    vi.stubEnv("PI_DATA_AGENT_DB_PATH", undefined);
     try {
       const onSessionStart = handlers.get("session_start")![0];
       await expect(
-        onSessionStart({ reason: "startup" }, makeStubCtx(dbPath))
+        onSessionStart({ reason: "startup" }, makeStubCtx(cwd))
       ).resolves.toBeUndefined();
 
       // engine.init() 真实执行：DuckDB 文件落盘
       expect(existsSync(dbPath)).toBe(true);
     } finally {
-      delete process.env.PI_DATA_AGENT_DB_PATH;
+      vi.unstubAllEnvs();
+      await handlers.get("session_shutdown")![0]({ reason: "exit" }, makeStubCtx(cwd));
     }
   });
 

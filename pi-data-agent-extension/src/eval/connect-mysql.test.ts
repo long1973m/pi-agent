@@ -22,7 +22,7 @@
  * - CM12: audit-log 落盘内容不含密码（M-6 验收）
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 import { loadConfig, toSecurityConfig } from "../config.js";
 import { PersistenceManager } from "../persistence.js";
 import { SecurityChecker, redactCredentials } from "../security.js";
@@ -93,17 +93,17 @@ async function makeInitializedTool(opts?: { dbAllowedHosts?: string[]; autoConfi
 
 describe("v0.12 T-1: connect_database mysql 分支", () => {
   beforeEach(() => {
-    delete process.env.MYSQL_PWD;
-    delete process.env.PI_DATA_AGENT_MYSQL_PWD;
+    vi.stubEnv("MYSQL_PWD", "");
+    vi.stubEnv("PI_DATA_AGENT_MYSQL_PWD", "");
   });
   afterEach(async () => {
     if (currentEngine) {
       await currentEngine.close();
       currentEngine = null;
     }
-    delete process.env.MYSQL_PWD;
-    delete process.env.PI_DATA_AGENT_MYSQL_PWD;
+    vi.unstubAllEnvs();
   });
+  afterAll(() => rmSync(TEST_DIR, { recursive: true, force: true }));
 
   // CM1: 默认配置（白名单空）任何 host block
   it("CM1: default empty whitelist blocks any host with guidance", async () => {
@@ -146,7 +146,9 @@ describe("v0.12 T-1: connect_database mysql 分支", () => {
     const r1 = await tool.execute("t1", args, undefined, undefined, ctx);
     const d1 = r1.details as any;
     expect(d1.blocked).toBeUndefined(); // 未被安全层拦截（CM2）
-    expect(d1.error).toBeTruthy(); // 失败发生在连接层（CM6）
+    expect(d1.error).toMatch(/Failed to connect to MySQL database with parameters/);
+    const secrets = await currentEngine!.query("SELECT name FROM duckdb_secrets() WHERE name = 'pi_data_agent_mysql_mysql_verify'");
+    expect(secrets.rows).toHaveLength(0);
 
     // CM7: 返回体整体 grep 密码原文零命中
     const serialized = JSON.stringify(r1);

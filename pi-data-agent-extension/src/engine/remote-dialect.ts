@@ -3,7 +3,7 @@
  *
  * 设计：
  * - 接一个新数据库 = 一份 RemoteDbDialect 配置 + 对称测试（阶段 3 加 postgres 即填表）
- * - attachRemote 固定五步：显式 INSTALL/LOAD → temporary secret → ATTACH READ_ONLY → 超时 → 无凭据摘要
+ * - attachRemote 固定五步：显式 INSTALL/LOAD → 超时 → temporary secret → ATTACH READ_ONLY → 无凭据摘要
  * - 凭据只进 CREATE SECRET 一条语句；永不拼进 ATTACH 连接串（调研 §4.5 实测：
  *   明文连接串 ATTACH 失败时异常文本含明文密码）
  * - 每一步失败都要清理半成品 secret，避免残留导致重连同名 alias 冲突
@@ -135,12 +135,12 @@ export function removeRemoteConnection(alias: string): void {
  * 连接远程数据库（只读）——五步固定顺序封装
  *
  * 1. 显式 INSTALL + LOAD 方言扩展（失败返回降级指引）
- * 2. CREATE OR REPLACE TEMPORARY SECRET（不落盘；password 只出现在这一条语句）
- * 3. ATTACH '' AS alias (TYPE ..., SECRET ..., READ_ONLY)——空连接串 + secret 引用
- * 4. SET {timeoutSetting} = {timeoutMs}
+ * 2. SET {timeoutSetting} = {timeoutMs}（失败即拒绝连接）
+ * 3. CREATE OR REPLACE TEMPORARY SECRET（不落盘；password 只出现在这一条语句）
+ * 4. ATTACH '' AS alias (TYPE ..., SECRET ..., READ_ONLY)——空连接串 + secret 引用
  * 5. 返回无凭据连接摘要
  *
- * 第 2/3 步任一失败：DROP SECRET 清理半成品后原样抛出（由调用方 redact 后返回）。
+ * 第 3/4 步任一失败：DROP SECRET 清理半成品后原样抛出（由调用方 redact 后返回）。
  */
 export async function attachRemote(
   engine: DuckDBEngine,
@@ -155,10 +155,13 @@ export async function attachRemote(
     throw new Error(ext.guidance);
   }
 
+  // 超时设置必须成功，才能创建凭据或发起远程连接。
+  await engine.exec(`SET ${dialect.timeoutSetting} = ${Math.round(Number(timeoutMs))}`);
+
   const secretName = `pi_data_agent_${dialect.type}_${alias}`;
 
   try {
-    // 2. temporary secret（凭据唯一入口；PORT 必须是数字字面量）
+    // 3. temporary secret（凭据唯一入口；PORT 必须是数字字面量）
     const secretSql =
       `CREATE OR REPLACE TEMPORARY SECRET ${q(secretName)} (` +
       `TYPE ${dialect.secretType}, ` +
@@ -169,7 +172,7 @@ export async function attachRemote(
       `PASSWORD '${escapeSqlString(password)}')`;
     await engine.exec(secretSql);
 
-    // 3. ATTACH READ_ONLY（secret 引用，连接串留空）
+    // 4. ATTACH READ_ONLY（secret 引用，连接串留空）
     const attachSql =
       `ATTACH '' AS ${q(alias)} ` +
       `(TYPE ${dialect.type}, SECRET ${q(secretName)}, READ_ONLY)`;
@@ -182,13 +185,6 @@ export async function attachRemote(
       // 清理失败不掩盖原始连接错误
     }
     throw err;
-  }
-
-  // 4. 查询超时（非致命：个别版本设置失败不阻断已建立的连接）
-  try {
-    await engine.exec(`SET ${dialect.timeoutSetting} = ${Math.round(Number(timeoutMs))}`);
-  } catch {
-    // 忽略，超时兜底由 DuckDB 扩展默认值承担
   }
 
   // 5. 无凭据摘要

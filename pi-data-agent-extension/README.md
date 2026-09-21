@@ -12,7 +12,7 @@
 - **可视化**：matplotlib 静态图（bar/line/scatter/histogram/pie/box/heatmap），Python 失败时自动回退 CSV
 - **报告**：会话报告（HTML 单文件离线自包含）+ 正式分析报告（executive/detailed，证据覆盖度质量门）
 - **Dashboard**：本地 Web 界面，浏览报告、管理数据字典与指标口径
-- **外部数据库**：MySQL 远程只读连接（v0.12），SQLite 本地文件；ATTACH 架构，远程表即普通 DuckDB 表，15 个工具全链路复用
+- **外部数据库**：MySQL 远程只读连接（v0.12），SQLite 本地文件；ATTACH 架构，远程表即普通 DuckDB 表，14 个工具可复用；真实 MySQL 全链路仍待验收
 
 ## 工具清单
 
@@ -41,12 +41,12 @@ npm run build
 pi -e /path/to/pi-data-agent-extension/dist/index.js
 ```
 
-Python 绘图依赖见 `requirements.txt`（matplotlib / pandas / seaborn / numpy / scipy）。
+Python 绘图依赖见 `requirements.txt`（matplotlib / pandas / seaborn / numpy / scipy）。测试继承调用方 PATH，不再注入个人虚拟环境；运行前请激活含这些依赖的环境，并确认 `python3 -c "import matplotlib, pandas, seaborn, numpy, scipy"` 成功。历史依赖版本矩阵冲突仍见 `../specs/BACKLOG.md`，本次未验证全新安装。
 
 ## 测试
 
 ```bash
-npm test            # 全量（vitest，51 文件 / 310 用例）
+npm test            # 全量（vitest；2026-09-17 实测 55 文件 / 355 用例，含 2 个新增回归文件；后续以本地运行结果为准）
 npm run test:watch  # watch 模式
 npm run test:coverage
 ```
@@ -75,7 +75,7 @@ connect_database(db_type="mysql", host="db.internal", port=3306, user="analyst",
    - env `PI_DATA_AGENT_MYSQL_PWD`（项目命名空间，优先）
    - env `MYSQL_PWD`（DuckDB mysql 扩展原生识别）
    - 交互模式下弹出密码输入框（结果仅存入 temporary secret，不落盘）
-4. **查询超时**：`dbQueryTimeoutMs`（默认 300000，夹紧 5s~10min），传给 `mysql_query_timeout_max_ms`。
+4. **查询超时**：`dbQueryTimeoutMs`（默认 300000，夹紧 5s~10min），传给 `mysql_query_timeout_max_ms`。超时设置在创建凭据与连接之前，设置失败即拒绝连接；慢查询是否被可靠中断仍需真机验证（见 `../specs/v0.12-EXECUTION_SPEC.md` §12）。
 5. **离线环境**：首次连接需下载 mysql/sqlite 扩展（约 10MB）。离线时预置扩展到 `~/.duckdb/extensions/<duckdb版本>/<os>_<arch>/`，或 `SET extension_directory` 指向本地目录。
 6. **已知精度坑**：MySQL `DECIMAL(p>38)` 列落地为 DOUBLE（DuckDB 上限 DECIMAL(38)）；`mysql_query()` 表函数因 issue #65 禁用，统一走 ATTACH。
 

@@ -1,7 +1,7 @@
 /**
  * Pi Data Agent — 配置管理
  *
- * 来源优先级：环境变量 > 项目级配置文件 > 默认值
+ * 来源优先级：调用方覆盖 > 环境变量 > 项目级配置文件 > 默认值
  */
 
 import { homedir } from "node:os";
@@ -45,25 +45,27 @@ export interface AppConfig {
   dbQueryTimeoutMs: number;
 }
 
-/** 默认配置 */
-const DEFAULTS: Readonly<AppConfig> = {
-  cwd: process.cwd(),
-  allowedPaths: [process.cwd()],
-  autoConfirmWrite: false,
-  maxQueryMemoryEntries: 5,
-  previewLimit: 100,
-  dictionarySampleRows: 5,
-  dbPath: join(process.cwd(), ".pi-data-agent", "session.duckdb"),
-  globalConfigDir: join(homedir(), ".config", "pi-data-agent"),
-  projectConfigDir: join(process.cwd(), ".pi-data-agent"),
-  outputDir: join(process.cwd(), ".pi-data-agent", "output"),
-  uploadsDir: join(process.cwd(), ".pi-data-agent", "uploads"),
-  visualizeMaxRows: 5000,
-  samplingStrategy: "random",
-  debug: false,
-  dbAllowedHosts: [],
-  dbQueryTimeoutMs: 300000,
-};
+/** 每次加载都按最终 cwd 创建默认配置，避免路径和数组跨实例共享。 */
+function createDefaults(cwd: string): AppConfig {
+  return {
+    cwd,
+    allowedPaths: [cwd],
+    autoConfirmWrite: false,
+    maxQueryMemoryEntries: 5,
+    previewLimit: 100,
+    dictionarySampleRows: 5,
+    dbPath: join(cwd, ".pi-data-agent", "session.duckdb"),
+    globalConfigDir: join(homedir(), ".config", "pi-data-agent"),
+    projectConfigDir: join(cwd, ".pi-data-agent"),
+    outputDir: join(cwd, ".pi-data-agent", "output"),
+    uploadsDir: join(cwd, ".pi-data-agent", "uploads"),
+    visualizeMaxRows: 5000,
+    samplingStrategy: "random",
+    debug: false,
+    dbAllowedHosts: [],
+    dbQueryTimeoutMs: 300000,
+  };
+}
 
 /** 环境变量映射 */
 const ENV_MAP: Record<string, keyof AppConfig> = {
@@ -156,19 +158,26 @@ function readFromProjectConfig(cwd: string): Partial<AppConfig> {
   }
 }
 
-/** 加载配置（优先级：环境变量 > 项目配置 > 默认值） */
+/** 加载配置（优先级：调用方覆盖 > 环境变量 > 项目配置 > 默认值） */
 export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
   const envConfig = readFromEnv();
-  const projectConfig = readFromProjectConfig(
-    overrides?.cwd ?? envConfig.cwd ?? DEFAULTS.cwd
+
+  // 只加载初始 cwd 的项目配置，再按最终优先级计算默认路径，不递归加载。
+  const initialCwd = resolve(overrides?.cwd ?? envConfig.cwd ?? process.cwd());
+  const projectConfig = readFromProjectConfig(initialCwd);
+  const effectiveCwd = resolve(
+    overrides?.cwd ?? envConfig.cwd ?? projectConfig.cwd ?? initialCwd
   );
 
   const merged: AppConfig = {
-    ...DEFAULTS,
+    ...createDefaults(effectiveCwd),
     ...projectConfig,
     ...envConfig,
     ...overrides,
   };
+
+  // allowedPaths 下方的 map 已创建副本；主机白名单也不能与调用方共享引用。
+  merged.dbAllowedHosts = [...merged.dbAllowedHosts];
 
   // 确保路径是绝对路径
   merged.cwd = resolve(merged.cwd);

@@ -8,7 +8,7 @@
 
 | 事项 | 来源版本 | 当前状态 | 备注 |
 |------|----------|----------|------|
-| PostgreSQL / MySQL 连接 | v0.2 §1.3（v0.3 再推） | 未开始 | **v0.2 起最长欠账**。阻塞点：连接串安全、DuckDB 扩展依赖、网络访问 |
+| PostgreSQL / MySQL 连接 | v0.2 §1.3（v0.3 再推） | MySQL 阶段 1 代码已交付（v0.12）；真机验收与 PG 未开始 | **v0.2 起最长欠账**。MySQL 只读 ATTACH 已实现并有本地测试；§12 真机清单（成功连接、下推、写入拦截、字符集、DECIMAL、慢查询中断）仍挂起。阻塞点：连接串安全、DuckDB 扩展依赖、网络访问 |
 | 冷历史 embedding 召回 | v0.2 §1.3（v0.3 再推） | 未开始 | 查询记忆规模未到阈值；建议规模超千条后再评估 |
 | 本地模型支持（Ollama） | 初版 EXECUTION_SPEC §推迟表（v0.3+） | 未开始 | LLM 调用已收敛到 llm/call-llm.ts，可在此层扩展 |
 | ML Skill（细粒度拆分） | 初版 EXECUTION_SPEC §推迟表（v0.4+）；v0.2 拆为 statistical-analysis / database-analysis Skill | 未开始 | 依赖 Python 环境标准化（见 requirements 版本钉死冲突问题） |
@@ -44,6 +44,6 @@
 |------|----------|----------|------|
 | JSON → YAML 全量迁移 | v0.2 §1.3 | 未开始 | 用户价值低、迁移风险高，长期挂起 |
 | 复杂 replay log | v0.2 §1.3 | 未开始 | 工程治理项，不影响核心体验 |
-| requirements.txt 版本钉死冲突 | v0.11（T-1 实测发现） | 部分（已装最新兼容组合绕过） | 原钉死版本组合 pip 解析失败；测试环境改用不锁版本安装，正式发布前需重新固化版本矩阵 |
-| config.ts DEFAULTS 路径固化 | v0.11（T-3 实测发现） | 未开始 | `projectConfigDir`/`dbPath` 等在模块加载时由 process.cwd() 算成绝对路径，`loadConfig({cwd})` 的 cwd 覆盖无法隔离这些目录，影响测试隔离与多实例场景 |
+| requirements.txt 版本钉死冲突 | v0.11（T-1 实测发现） | 部分（已装最新兼容组合绕过） | 原钉死版本组合 pip 解析失败；v0.12 收口已移除 vitest 个人 venv 硬编码，测试改用调用方 PATH（本机 `/Users/mare/.openclaw/venvs/duckdb` 实测可用），正式发布前仍需固化版本矩阵 |
+| config.ts DEFAULTS 路径固化 | v0.11（T-3 实测发现） | 已修复（v0.12 收口，2026-09-17） | 默认路径改为按最终 cwd 每次创建（`createDefaults`），`dbAllowedHosts` 数组独立拷贝；新增 `src/eval/config.test.ts` 22 用例回归，优先级 overrides > env > project > defaults |
 | 测试夹具 iris.csv 路径脆弱 | v0.11（T-1 迁移实测） | 已缓解（fixtures 目录收口） | 迁移后 fixture 引用统一走 `src/eval/fixtures/`，如再出现路径问题优先检查 vitest root 配置 |

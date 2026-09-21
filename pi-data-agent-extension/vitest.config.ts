@@ -1,18 +1,8 @@
 import { defineConfig } from "vitest/config";
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
-
-// Python 绘图环境（T-1）：若存在专用 venv，则前置到 PATH，
-// 使测试内 spawn("python3") 能命中带 matplotlib/pandas/seaborn 的解释器。
-const chartVenvBin = "/Users/mare/.workbuddy/binaries/python/envs/chart/bin";
-const chartPathPrefix = existsSync(chartVenvBin)
-  ? { PATH: `${chartVenvBin}${delimiter}${process.env.PATH ?? ""}` }
-  : {};
 
 export default defineConfig({
   test: {
-    // Python 绘图 venv 注入（visualize / integration 测试依赖）
-    env: chartPathPrefix,
+    // 测试内 spawn("python3") 直接使用调用方 PATH（由运行环境保证解释器可用）
     // 测试文件根目录
     root: ".",
     // T-1 统一后：全部测试（原 vitest + node:test + 自定义断言脚本）均为
@@ -22,8 +12,9 @@ export default defineConfig({
     exclude: ["src/eval/fixtures/**"],
     // 运行环境（纯逻辑测试用 node 即可）
     environment: "node",
-    // 超时时间（部分测试需要初始化 DuckDB）
-    testTimeout: 30_000,
+    // 超时时间（部分测试需要初始化 DuckDB；Python 绘图用例在慢机/冷启动下
+    // 单文件可超 30s，2026-09-17 收口实测两次全量均触发误报，故放宽到 60s）
+    testTimeout: 60_000,
     // 单线程运行（DuckDB 单连接需要串行）
     pool: "forks",
     poolOptions: {
