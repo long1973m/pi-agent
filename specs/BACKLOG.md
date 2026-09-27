@@ -13,7 +13,7 @@
 | 本地模型支持（Ollama） | 初版 EXECUTION_SPEC §推迟表（v0.3+） | 未开始 | LLM 调用已收敛到 llm/call-llm.ts，可在此层扩展 |
 | ML Skill（细粒度拆分） | 初版 EXECUTION_SPEC §推迟表（v0.4+）；v0.2 拆为 statistical-analysis / database-analysis Skill | 未开始 | 依赖 Python 环境标准化（见 requirements 版本钉死冲突问题） |
 | 交互式 HTML 图表 | v0.2 §1.3 | 部分交付（echarts-template） | 🔴 ECharts CDN 硬编码 `echarts-template.ts:207`，与"离线自包含"交付原则矛盾，需本地化或内联 |
-| Query Recipe / 语义查询资产 | v0.7 §Deferred | 未开始 | 需要检索、验证、失效与 Agent 复用全链路 |
+| Query Recipe / 语义查询资产 | v0.7 §Deferred | 未开始（v0.13 实施时撤除"历史样例附注"轻量版：L0 Query Memory 注入已覆盖轻量召回） | 检索、验证、失效与晋升状态机待真实需求与 L2 效果评估后设计（v0.13-EXECUTION_SPEC.md §8） |
 | 从 SQL 历史自动晋升查询资产 | v0.7 §Deferred | 未开始 | 依赖 Query Recipe 状态机 |
 | 自动周期报告 | v0.7 §Deferred | 未开始 | 需要调度、数据刷新和时间窗口语义 |
 | 多报告对比 | v0.6 §Deferred（v0.5 已提"真正的多会话实时对比"） | 未开始 | 需要统一分析产物模型和差异算法 |
@@ -31,8 +31,11 @@
 | 字典 AI 推断交互重做 | v0.10 §9 | 未开始 | 等用户补充"不好用"的具体表现后再动 |
 | 表分类的自动聚类/层级目录 | v0.10 §9 | 未开始 | v0.10 先用 tags，表多了再演进 |
 | 视觉整体翻新（卡片/留白/字号层级） | v0.10 §9 | 未开始 | 等信息架构稳定后一次做，避免返工 |
-| L2 即时注入（query_data 自动附卡片/指标） | v0.10 §9.1 | 设计已预埋，未实施 | 触发条件/已交付清单/预算（≤200 token、2 张表）设计完成，待 A-3/A-4 使用反馈 |
+| L2 即时注入（query_data 自动附卡片/指标） | v0.10 §9.1 | 已交付（v0.13 阶段一，2026-09-27） | 设计 §9.1 原样落地，内容三类：表卡片 / 指标口径 / uncertain 警示（历史样例撤除，L0 已覆盖）；spec：v0.13-EXECUTION_SPEC.md §3 |
+| 远程表物化（materialize_remote_table） | 原 v0.13 spec（2026-09-01） | 未开始 | spec 已改号为 v0.14-EXECUTION_SPEC.md（2026-09-26，v0.13 槽位让位「可信分析官」主题）；不依赖真机 MySQL，sqlite ATTACH 替身即可开发 |
 | MCP 服务暴露知识库 | v0.10 §9 | 未开始 | 仅当需要 pi 之外 Agent 共享时再做 |
+| load_data 文件不存在误报为"非 Excel" | v0.13 S0 演练（F1，2026-09-27） | 未开始 | `readMagicBytes` 把 ENOENT 归入 null，Excel 路径一律报"文件头校验失败"；应区分"文件不存在"与"格式不符" |
+| load_data 缺 read_csv_auto 参数透传 | v0.13 S0 演练（F2，2026-09-27） | 未开始 | 真实导出混合日期格式（如 12/13/10 9:02）嗅探失败整表拒绝，无 types/dateformat 逃生参数；当前 workaround = 预处理 ISO |
 | SQL Server 接入（mssql 社区扩展） | v0.12 调研（research/other-database-support-research.md §2） | 未开始 | 触发条件=真实需求。127★/活跃/MIT【GitHub API 2026-08-31】；secret type、超时默认值🔴待验证；注意 community 扩展与 DuckDB 版本配对风险 |
 | MongoDB / ClickHouse 旁路物化 | v0.12 调研（同上 §2） | 未开始 | 无 DuckDB 扩展；走「导出→NDJSON→read_json_auto 落表」，复用文件导入管线，2–3 人天/个 |
 | KingbaseES 兼容性验证 | v0.12 调研（同上 §2） | 未开始 | 国产化需求出现时验证：PG 协议兼容，理论上 postgres 扩展可直接 ATTACH，🔴待验证 |

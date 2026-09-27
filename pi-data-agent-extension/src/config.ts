@@ -43,6 +43,8 @@ export interface AppConfig {
   dbAllowedHosts: string[];
   /** v0.12 M-1: 远程查询超时（毫秒），传给 mysql_query_timeout_max_ms；夹紧 5_000 ~ 600_000 */
   dbQueryTimeoutMs: number;
+  /** v0.13 L2-1: query_data 语义附注开关（默认开）；噪音逃生阀，见 hooks/l2-injection.ts */
+  l2InjectionEnabled: boolean;
 }
 
 /** 每次加载都按最终 cwd 创建默认配置，避免路径和数组跨实例共享。 */
@@ -64,6 +66,7 @@ function createDefaults(cwd: string): AppConfig {
     debug: false,
     dbAllowedHosts: [],
     dbQueryTimeoutMs: 300000,
+    l2InjectionEnabled: true,
   };
 }
 
@@ -80,6 +83,7 @@ const ENV_MAP: Record<string, keyof AppConfig> = {
   PI_DATA_AGENT_DEBUG: "debug",
   PI_DATA_AGENT_DB_ALLOWED_HOSTS: "dbAllowedHosts",
   PI_DATA_AGENT_DB_QUERY_TIMEOUT_MS: "dbQueryTimeoutMs",
+  PI_DATA_AGENT_L2_INJECTION: "l2InjectionEnabled",
 };
 
 /** 从环境变量读取配置 */
@@ -118,6 +122,10 @@ function readFromEnv(): Partial<AppConfig> {
         break;
       case "dbQueryTimeoutMs":
         result.dbQueryTimeoutMs = parseInt(value, 10);
+        break;
+      case "l2InjectionEnabled":
+        // 支持 off/false/0 关闭，其余值（on/true/1）开启
+        result.l2InjectionEnabled = !["off", "false", "0"].includes(value.trim().toLowerCase());
         break;
       default:
         // @ts-expect-error — string fields

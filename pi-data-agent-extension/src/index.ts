@@ -43,6 +43,7 @@ import type { ToolContext } from "./tools/tool-context.js";
 import { DataDictionaryManager } from "./hooks/data-dictionary.js";
 import { QueryMemoryManager } from "./hooks/query-memory.js";
 import { createActiveQuestioningHandler } from "./hooks/active-questioning.js";
+import { L2DeliveredState } from "./hooks/l2-injection.js";
 import { AuditLogManager } from "./audit-log.js";
 import { TableCardStore } from "./table-cards/store.js";
 import { renderNavContext, truncateToBudget, QUERY_MEMORY_CHAR_BUDGET, CALIBER_CHAR_BUDGET } from "./navigation/nav-context.js";
@@ -72,6 +73,8 @@ interface RuntimeContext {
   /** v0.10 A-3: 表卡片存储（与 Dashboard 共用 .pi-data-agent/table-cards.json） */
   tableCards: TableCardStore;
   auditLog: AuditLogManager;
+  /** v0.13 L2-1: 语义附注已交付清单（session 级；session_start 重建自然重置） */
+  l2State: L2DeliveredState;
   /** LLM 调用函数（session_start 时从 ctx.model 初始化） */
   callLLM?: (prompt: string, systemPrompt?: string) => Promise<string>;
 }
@@ -133,6 +136,9 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
     const auditLog = new AuditLogManager(config.projectConfigDir);
     logger.debug("Audit log initialized");
 
+    // 5.6 v0.13 L2-1: 语义附注已交付清单（session 级；键内嵌表 fingerprint，结构变化自动重投递）
+    const l2State = new L2DeliveredState();
+
     // 6. 恢复 session 状态
     const sessionState = persistence.restoreSessionState();
     logger.debug(`Session state restored: dictionary=${sessionState.dataDictionary?.length ?? 0}, memory=${sessionState.queryMemory?.entries.length ?? 0}`);
@@ -156,6 +162,7 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
       queryMemory,
       tableCards,
       auditLog,
+      l2State,
     };
     runtime.sessionData.set("session_start_time", new Date().toISOString());
     runtime.sessionData.set("cwd", ctx.cwd);
@@ -403,6 +410,7 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
       queryMemory: runtime.queryMemory,
       tableCards: runtime.tableCards,
       callLLM: runtime.callLLM,
+      l2State: runtime.l2State,
     };
   };
 

@@ -11,6 +11,7 @@ import type { ToolContext, ToolRegisterParams } from "./tool-context.js";
 import { formatQueryResult } from "./tool-context.js";
 import { executeWithRecovery, recoveryResultToToolResult } from "../error-recovery.js";
 import { resolveConfirmGate } from "../security.js";
+import { buildSemanticNoteFromRuntime } from "../hooks/l2-injection.js";
 
 const QueryDataParams = Type.Object({
   sql: Type.String({ description: "要执行的 SQL 查询语句（SELECT/DESCRIBE/SHOW）" }),
@@ -172,6 +173,21 @@ export function createQueryDataTool(params: ToolRegisterParams): ToolDefinition 
             });
           }
 
+          // 5.5 v0.13 L2-2: 语义附注（执行成功后拼接在结果前；表卡片 / 指标口径 / uncertain 警示）
+          // 键内嵌表 fingerprint：结构变化自动重投递；注入失败静默，不影响查询结果
+          let l2Note = "";
+          if (rt.config.l2InjectionEnabled && rt.l2State) {
+            try {
+              const note = await buildSemanticNoteFromRuntime(rt, args.sql, args.user_intent);
+              if (note) {
+                for (const key of note.keys) rt.l2State!.mark(key);
+                l2Note = note.text;
+              }
+            } catch {
+              // 语义附注是尽力而为的提醒，任何失败都不阻断查询
+            }
+          }
+
           // 6. 组装不确定性警告文本
           let uncertaintyText = "";
           if (uncertaintyWarnings.length > 0) {
@@ -181,14 +197,16 @@ export function createQueryDataTool(params: ToolRegisterParams): ToolDefinition 
               `\n\n建议：运行 describe_data("${args.table_name}") 确认字段含义后再分析。`;
           }
 
+          const resultText = text + dictWarning + uncertaintyText;
           return {
-            content: [{ type: "text", text: text + dictWarning + uncertaintyText }],
+            content: [{ type: "text", text: l2Note ? `${l2Note}\n\n${resultText}` : resultText }],
             details: {
               toolName: "query_data",
               sql: args.sql,
               userIntent: args.user_intent,
               assumptions: args.assumptions ?? null,
               autoConfirmedWrite,
+              l2NoteProvided: l2Note.length > 0,
               totalRowCount: result.totalRowCount,
               returnedRowCount: result.returnedRowCount,
               truncated: result.truncated,

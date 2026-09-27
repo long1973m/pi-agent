@@ -16,6 +16,7 @@ import type { ToolRegisterParams } from "./tool-context.js";
 import type { ColumnSemanticStatus } from "../types.js";
 import { createSkeletonCard, computeTableSchemaFingerprint } from "../table-cards/store.js";
 import { listActiveMetricDefinitions } from "../metrics/metric-definitions.js";
+import { tableCardKey, metricKey } from "../hooks/l2-injection.js";
 
 /** 单表关联指标上限 */
 const RELATED_METRIC_LIMIT = 5;
@@ -167,6 +168,12 @@ export function createGetTableCardTool(params: ToolRegisterParams): ToolDefiniti
         parts.push(
           "【字段业务含义】\n（暂无该表的字段字典。可在 Dashboard「语义」Tab 对该表运行 AI 推断补全字段含义，或用 describe_data 查看结构。）"
         );
+      }
+
+      // v0.13 L2-4: 成功返回即写已交付清单——同表卡片与关联指标不再被 L2 重复附注
+      if (rt.l2State) {
+        rt.l2State.mark(tableCardKey(tableName, fingerprint));
+        for (const m of relatedMetrics) rt.l2State.mark(metricKey(m.id));
       }
 
       return {

@@ -11,6 +11,7 @@ import type { AppConfig } from "../config.js";
 import type { DataDictionaryManager } from "../hooks/data-dictionary.js";
 import type { QueryMemoryManager } from "../hooks/query-memory.js";
 import type { TableCardStore } from "../table-cards/store.js";
+import type { L2DeliveredState } from "../hooks/l2-injection.js";
 import { maskPII } from "../pii-guard.js";
 
 /** 工具运行时上下文 */
@@ -26,6 +27,8 @@ export interface ToolContext {
   tableCards?: TableCardStore;
   /** v0.10 A-3/A-4: LLM 调用函数（可选，session_start 时从 ctx.model 初始化） */
   callLLM?: (prompt: string, systemPrompt?: string) => Promise<string>;
+  /** v0.13 L2-1: 语义附注已交付清单（session 级；缺失时 L2 完全静默，兼容既有测试桩） */
+  l2State?: L2DeliveredState;
 }
 
 /** 工具注册参数 */
