@@ -15,6 +15,8 @@ export type DuckDBColumnType =
   | "SMALLINT"
   | "INTEGER"
   | "BIGINT"
+  | "HUGEINT"
+  | "UHUGEINT"
   | "UTINYINT"
   | "USMALLINT"
   | "UINTEGER"

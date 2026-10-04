@@ -463,6 +463,8 @@ export class DuckDBEngine {
       SMALLINT: "SMALLINT",
       INTEGER: "INTEGER",
       BIGINT: "BIGINT",
+      HUGEINT: "HUGEINT",
+      UHUGEINT: "UHUGEINT",
       UTINYINT: "UTINYINT",
       USMALLINT: "USMALLINT",
       UINTEGER: "UINTEGER",

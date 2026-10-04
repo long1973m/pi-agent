@@ -1,0 +1,11 @@
+user_id,channel,amount,has_coupon,order_date
+u1,app,120,true,2026-06-01
+u2,app,80,true,2026-06-01
+u3,web,60,true,2026-06-01
+u4,web,70,false,2026-06-01
+u5,app,55,false,2026-06-01
+u6,app,50,false,2026-06-01
+u7,web,30,false,2026-06-01
+u8,web,20,true,2026-06-01
+u9,app,10,false,2026-01-02
+u10,web,5,true,2026-01-02

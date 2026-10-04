@@ -2,17 +2,18 @@
 
 基于 [Pi Extension API](https://pi.dev) + DuckDB 的数据分析智能体扩展：让 Pi 具备加载数据、SQL 查询、可视化、生成报告的完整分析能力，并以数据字典、查询记忆、表卡片三层知识库沉淀分析资产。
 
-当前版本：**v0.12**（MySQL 只读连接 + 多方言基座）。
+当前版本：**v0.13 开发中**（可信分析官：L2 语义注入已交付 + PM 分析模板包实施中；MySQL 只读连接见 v0.12）。
 
 ## 功能概览
 
 - **数据加载**：CSV / Excel（.xlsx/.xls）上传自动建表，DuckDB 本地存储
 - **SQL 查询**：自然语言 → SQL，带错误自修复（error-recovery）与查询记忆
-- **知识库**：数据字典（AI 推断 + 用户确认状态机）、表卡片、指标口径、查询记忆，按 L0 导航 / L1 按需 / L2 注入三层渐进披露
+- **知识库**：数据字典（AI 推断 + 用户确认状态机）、表卡片、指标口径、查询记忆，按 L0 导航 / L1 按需 / L2 注入三层渐进披露；L2 在 query_data 结果前置语义附注（表卡片/指标口径/uncertain 警示，单次 ≤200 token、每轮 ≤2 表，可用 `PI_DATA_AGENT_L2_INJECTION=off` 关闭）
+- **PM 分析模板（v0.13）**：`run_analysis_template` 一键跑漏斗 / 留存 cohort / A/B 检验——统计全部确定性计算（LLM 只解释不计算），uncertain 字段 fail-closed，结果自带"方法与局限"说明
 - **可视化**：matplotlib 静态图（bar/line/scatter/histogram/pie/box/heatmap），Python 失败时自动回退 CSV
 - **报告**：会话报告（HTML 单文件离线自包含）+ 正式分析报告（executive/detailed，证据覆盖度质量门）
 - **Dashboard**：本地 Web 界面，浏览报告、管理数据字典与指标口径
-- **外部数据库**：MySQL 远程只读连接（v0.12），SQLite 本地文件；ATTACH 架构，远程表即普通 DuckDB 表，14 个工具可复用；真实 MySQL 全链路仍待验收
+- **外部数据库**：MySQL 远程只读连接（v0.12），SQLite 本地文件；ATTACH 架构，远程表即普通 DuckDB 表，15 个工具可复用；真实 MySQL 全链路仍待验收
 
 ## 工具清单
 
@@ -32,6 +33,17 @@
 | generate_report | 生成正式分析报告 |
 | generate_session_report | 生成会话报告 |
 | get_table_card | 查询表卡片（用途/边界/字段含义） |
+| run_analysis_template | PM 分析模板：funnel 状态漏斗 / cohort 留存分群 / ab_test 双比例检验（确定性统计，v0.13） |
+
+### PM 分析模板（v0.13）
+
+`run_analysis_template` 提供三种模板：
+
+- **funnel（状态漏斗）**：2–8 个条件步 + 去重键（`user_key`），可选时间窗口（`time_column` + `window_days`，窗口 = 数据最新时间往前 N 天）。第 k 步 = 满足前 k 步条件**合取**的 distinct user_key（用户级条件叠加，不含步序时间约束）。状态互斥型数据（每行一个 status）不适用——请用分组对比或 cohort。
+- **cohort（留存分群）**：`user_key` + `activity_time` + `period`（week/month）+ 可选 `activity_condition`（排除噪声行为）+ `lookback`（默认 12，上限 24）。长期格式输出各群 × 期偏移的留存率与简单平均。
+- **ab_test（A/B 双比例检验）**：`variant_column`（恰好 2 个非空取值）+ `success_condition` + `unit`（去重粒度）+ 可选 `segment_columns`（≤3，辛普森扫描）+ `alpha`（默认 0.05）。双侧两比例 z 检验（合并比例），p 值由 TypeScript 确定性正态 CDF 计算（Zelen–Severo 近似，误差 < 1e-7）。内置四项护栏：样本量不足（n<100 或期望计数 <5）、辛普森悖论扫描（段内方向 vs 总体方向）、边缘显著提示（p ∈ (0.01, 0.2)）、效应量（绝对差 + 相对 lift）。
+
+两条统一约束：**统计数值全部由确定性代码计算**，模型只按返回的 method_notes 解释、不得改写或自行计算；映射列触及 `uncertain` 状态字段时**拒绝执行**（fail-closed）。golden 数据集（`src/eval/fixtures/funnel-known.csv`、`cohort-known.csv`）保证统计口径有精确已知答案回归。
 
 ## 安装与加载
 
@@ -46,7 +58,7 @@ Python 绘图依赖见 `requirements.txt`（matplotlib / pandas / seaborn / nump
 ## 测试
 
 ```bash
-npm test            # 全量（vitest；2026-09-17 实测 55 文件 / 355 用例，含 2 个新增回归文件；后续以本地运行结果为准）
+npm test            # 全量（vitest；2026-09-27 实测 57 文件 / 390 用例；后续以本地运行结果为准）
 npm run test:watch  # watch 模式
 npm run test:coverage
 ```
@@ -84,13 +96,13 @@ connect_database(db_type="mysql", host="db.internal", port=3306, user="analyst",
 ```
 pi-data-agent-extension/
 ├── src/
-│   ├── index.ts            # Extension 入口（生命周期 + 14 工具注册）
+│   ├── index.ts            # Extension 入口（生命周期 + 15 工具注册）
 │   ├── config.ts           # 配置加载（env > 项目配置 > 默认值）
 │   ├── security.ts         # SQL 安全检查（确认门 fail-closed、路径白名单）
 │   ├── persistence.ts      # 配置/字典/记忆持久化
 │   ├── error-recovery.ts   # 错误自修复
 │   ├── engine/             # DuckDB 引擎 + Python 无状态调用
-│   ├── tools/              # 14 个工具实现
+│   ├── tools/              # 15 个工具实现
 │   ├── dashboard/          # 本地 Web Dashboard（server/routes/services/middleware）
 │   ├── hooks/              # 数据字典、查询记忆、主动反问
 │   ├── navigation/         # L0 导航上下文渲染

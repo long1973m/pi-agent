@@ -55,6 +55,7 @@ const AUDIT_TOOLS = new Set([
   "export_result",
   "visualize",
   "connect_database",
+  "run_analysis_template",
 ]);
 
 /** 审计日志管理器 */
@@ -252,6 +253,11 @@ export class AuditLogManager {
         const dbType = typeof args.db_type === "string" ? args.db_type : "";
         const path = typeof args.file_path === "string" ? args.file_path : "";
         return `connect_database: ${dbType} — ${path} — ${resultStatus}`;
+      }
+      case "run_analysis_template": {
+        const template = typeof args.template === "string" ? args.template : "";
+        const table = typeof args.table === "string" ? args.table : "";
+        return `run_analysis_template: ${template} on ${table || "unknown"} — ${resultStatus}`;
       }
       default:
         return `${toolName}: executed — ${resultStatus}`;

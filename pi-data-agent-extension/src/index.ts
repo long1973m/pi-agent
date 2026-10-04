@@ -50,6 +50,7 @@ import { renderNavContext, truncateToBudget, QUERY_MEMORY_CHAR_BUDGET, CALIBER_C
 import type { NavCardInfo } from "./navigation/nav-context.js";
 import { listActiveMetricDefinitions } from "./metrics/metric-definitions.js";
 import { createGetTableCardTool } from "./tools/get-table-card.js";
+import { createRunAnalysisTemplateTool } from "./tools/run-analysis-template.js";
 import { generateDatasetFingerprintSync } from "./utils/dataset-fingerprint.js";
 import { startDashboard, stopDashboard, stopAllDashboards } from "./dashboard/lifecycle.js";
 import { createDashboardServer } from "./dashboard/server.js";
@@ -431,7 +432,9 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
   pi.registerTool(createGenerateSessionReportTool(toolParams));
   // v0.10 A-4: L1 按需取用层——表卡片/相关指标口径/字段业务含义三源聚合
   pi.registerTool(createGetTableCardTool(toolParams));
-  logger.debug("Registered 14 tools: load_data, describe_data, query_data, transform_data, list_datasets, ask_clarification, export_result, visualize, show_image, connect_database, confirm_dictionary, generate_report, generate_session_report, get_table_card");
+  // v0.13 TPL-1: PM 分析模板（funnel/cohort，确定性统计；ab_test 阶段三扩展）
+  pi.registerTool(createRunAnalysisTemplateTool(toolParams));
+  logger.debug("Registered 15 tools: load_data, describe_data, query_data, transform_data, list_datasets, ask_clarification, export_result, visualize, show_image, connect_database, confirm_dictionary, generate_report, generate_session_report, get_table_card, run_analysis_template");
 
   // ========================================================================
   // Phase 3: tool_call Hook（主动反问拦截）
