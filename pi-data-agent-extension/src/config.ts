@@ -43,6 +43,8 @@ export interface AppConfig {
   dbAllowedHosts: string[];
   /** v0.12 M-1: 远程查询超时（毫秒），传给 mysql_query_timeout_max_ms；夹紧 5_000 ~ 600_000 */
   dbQueryTimeoutMs: number;
+  /** v0.14 RM-1: 单次远程表物化的行数硬熔断；非正整数回落默认值 */
+  dbMaxMaterializeRows: number;
   /** v0.13 L2-1: query_data 语义附注开关（默认开）；噪音逃生阀，见 hooks/l2-injection.ts */
   l2InjectionEnabled: boolean;
 }
@@ -66,6 +68,7 @@ function createDefaults(cwd: string): AppConfig {
     debug: false,
     dbAllowedHosts: [],
     dbQueryTimeoutMs: 300000,
+    dbMaxMaterializeRows: 500_000,
     l2InjectionEnabled: true,
   };
 }
@@ -83,6 +86,7 @@ const ENV_MAP: Record<string, keyof AppConfig> = {
   PI_DATA_AGENT_DEBUG: "debug",
   PI_DATA_AGENT_DB_ALLOWED_HOSTS: "dbAllowedHosts",
   PI_DATA_AGENT_DB_QUERY_TIMEOUT_MS: "dbQueryTimeoutMs",
+  PI_DATA_AGENT_DB_MAX_MATERIALIZE_ROWS: "dbMaxMaterializeRows",
   PI_DATA_AGENT_L2_INJECTION: "l2InjectionEnabled",
 };
 
@@ -122,6 +126,9 @@ function readFromEnv(): Partial<AppConfig> {
         break;
       case "dbQueryTimeoutMs":
         result.dbQueryTimeoutMs = parseInt(value, 10);
+        break;
+      case "dbMaxMaterializeRows":
+        result.dbMaxMaterializeRows = parseInt(value, 10);
         break;
       case "l2InjectionEnabled":
         // 支持 off/false/0 关闭，其余值（on/true/1）开启
@@ -200,6 +207,12 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
   if (!Number.isFinite(merged.dbQueryTimeoutMs)) merged.dbQueryTimeoutMs = 300000;
   merged.dbQueryTimeoutMs = Math.min(600_000, Math.max(5_000, Math.round(merged.dbQueryTimeoutMs)));
 
+  // v0.14 RM-1: 物化行数熔断（非正整数/非有限数回落默认 500_000）
+  if (!Number.isFinite(merged.dbMaxMaterializeRows) || merged.dbMaxMaterializeRows <= 0) {
+    merged.dbMaxMaterializeRows = 500_000;
+  }
+  merged.dbMaxMaterializeRows = Math.floor(merged.dbMaxMaterializeRows);
+
   // 确保 uploads 目录始终在白名单中（上传功能的必要条件）
   if (!merged.allowedPaths.some((p) => p === merged.uploadsDir)) {
     merged.allowedPaths.push(merged.uploadsDir);
@@ -237,5 +250,6 @@ export function toSecurityConfig(config: AppConfig): SecurityConfig {
     blockOutOfBoundsPath: true,
     dbAllowedHosts: config.dbAllowedHosts,
     dbQueryTimeoutMs: config.dbQueryTimeoutMs,
+    dbMaxMaterializeRows: config.dbMaxMaterializeRows,
   };
 }

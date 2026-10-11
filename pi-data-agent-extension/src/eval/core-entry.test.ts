@@ -2,7 +2,7 @@
  * T-3 — index.ts 入口装配测试（vitest）
  *
  * 覆盖:
- * - E1: factory 注册 15 个工具 + 2 个命令 + 生命周期/审计 hooks
+ * - E1: factory 注册 16 个工具 + 2 个命令 + 生命周期/审计 hooks
  * - E2: session_start 在隔离 cwd 完成运行时初始化（不抛错、.pi-data-agent 建好）
  * - E3: before_agent_start 返回注入了数据助手规则与基础 prompt 的 systemPrompt
  * - E4: session_shutdown 保存状态并清理，二次调用幂等安全
@@ -34,6 +34,7 @@ const EXPECTED_TOOLS = [
   "generate_session_report",
   "get_table_card",
   "run_analysis_template",
+  "materialize_remote_table",
 ];
 
 /** stub ExtensionAPI：捕获事件处理器 / 工具 / 命令注册 */
@@ -83,7 +84,7 @@ afterEach(() => {
 });
 
 describe("index.ts 入口装配（T-3）", () => {
-  it("E1: 注册 15 个工具、2 个命令、生命周期与审计 hooks", async () => {
+  it("E1: 注册 16 个工具、2 个命令、生命周期与审计 hooks", async () => {
     const { pi, handlers, tools, commands } = makeStubPi();
     await (factory as (pi: unknown) => Promise<void>)(pi);
 

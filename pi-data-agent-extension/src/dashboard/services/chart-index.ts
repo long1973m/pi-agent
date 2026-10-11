@@ -19,6 +19,7 @@ interface ChartManifest {
   dataset?: string;
   sourceReportId: string;
   sourceReportFile: string;
+  thumbnailUrl?: string;
 }
 
 /**
@@ -116,6 +117,7 @@ export class ChartIndexService {
             sourceReport: chart.sourceReportFile || report.file,
             sourceReportId: chart.sourceReportId || report.id,
             dataset: chart.dataset,
+            thumbnailUrl: chart.thumbnailUrl,
           });
         }
       }

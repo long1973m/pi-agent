@@ -1,23 +1,47 @@
 {
   "name": "pi-data-agent-extension",
-  "version": "0.1.0",
-  "description": "Pi Data Agent Extension - S0.1 PoC for MVP validation",
+  "version": "0.14.4",
+  "description": "Natural-language data analysis for Pi: DuckDB querying, semantic data dictionary, analysis skills, charts, reports, and a local dashboard",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/long1973m/pi-agent.git",
+    "directory": "pi-data-agent-extension"
+  },
+  "homepage": "https://github.com/long1973m/pi-agent/tree/main/pi-data-agent-extension",
+  "bugs": "https://github.com/long1973m/pi-agent/issues",
   "scripts": {
     "build": "rm -rf dist && ./node_modules/.bin/tsc && cp -r src/dashboard/static dist/dashboard/",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run check && npm run build"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "requirements.txt",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.4-r.1",
-    "@earendil-works/pi-coding-agent": "^0.79.0",
-    "@sinclair/typebox": "^0.34.0",
     "express": "^4.21.2",
     "xlsx": "^0.18.5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -28,10 +52,13 @@
     "vitest": "^2.1.0"
   },
   "keywords": [
+    "pi-package",
     "pi-extension",
     "data-agent",
     "duckdb",
-    "analytics"
+    "analytics",
+    "sql",
+    "data-visualization"
   ],
   "license": "MIT"
 }

@@ -56,6 +56,7 @@ const AUDIT_TOOLS = new Set([
   "visualize",
   "connect_database",
   "run_analysis_template",
+  "materialize_remote_table",
 ]);
 
 /** 审计日志管理器 */
@@ -258,6 +259,13 @@ export class AuditLogManager {
         const template = typeof args.template === "string" ? args.template : "";
         const table = typeof args.table === "string" ? args.table : "";
         return `run_analysis_template: ${template} on ${table || "unknown"} — ${resultStatus}`;
+      }
+      case "materialize_remote_table": {
+        const alias = typeof args.alias === "string" ? args.alias : "";
+        const table = typeof args.table === "string" ? args.table : "";
+        const target = typeof args.target_table === "string" ? args.target_table : "auto";
+        const rowLimit = typeof args.row_limit === "number" ? ` (row_limit=${args.row_limit})` : "";
+        return `materialize_remote_table: ${alias}.${table} → ${target}${rowLimit} — ${resultStatus}`;
       }
       default:
         return `${toolName}: executed — ${resultStatus}`;

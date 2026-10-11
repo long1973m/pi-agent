@@ -1,7 +1,7 @@
 /**
  * Pi Data Agent Dashboard — 前端完整应用
  *
- * 模块结构（v0.10.1：3 Tab — 数据工作台 / 报告 / SQL 历史）：
+ * 模块结构（v0.14：5 Tab — 数据工作台 / 报告 / 图表 / 本地副本 / SQL 历史）：
  * 1. Core: API 客户端、工具函数、编辑守卫（EditGuard，未保存更改保护）
  * 2. Tab 导航（localStorage last-tab-v3，旧 v2/v1 key 丢弃）
  * 3. 报告中心模块（过程记录降级为底部折叠分组）
@@ -11,13 +11,19 @@
  *    - 表卡片模块（查看/编辑两态）
  *    - 数据字典模块（字段条目查看/编辑两态）
  *    - 指标定义模块（卡片查看/编辑两态）
- * 5. SQL 历史模块
+ * 5. 图表模块（GET /api/charts 分页 + 数据集筛选 + 放大查看 + 复制重跑指令）
+ * 6. 本地副本模块（GET /api/materializations 物化清单 + 漂移状态徽章）
+ * 7. SQL 历史模块
  *
  * v0.10.1 变更：
  * - 上传 bug 三处修复（后端 70mb 专用解析器 + 前端 413/令牌错误映射理顺）
  * - 数据 + 语义 → 一个工作台 Tab；上传改弹窗
  * - AI 推断/AI 起草前端入口撤除（后端 draft API 保留，get_table_card 骨架卡兜底不变）
  * - 表卡片/指标定义/字段字典统一查看/编辑两态
+ *
+ * v0.14 变更：
+ * - 新增图表 / 本地副本两个 Tab（纯前端，后端 API 已就绪）
+ * - 富空态升级为「图标 + 标题 + 说明 + CTA」模板，区块统一 .panel 容器
  */
 
 (function () {
@@ -147,6 +153,8 @@
     database: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>',
     "file-text": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
     history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>',
+    "bar-chart": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+    layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>',
   };
 
   /** 富空态：文案沿用既有提示语；actionHtml 为可选行动按钮（无则省略） */
@@ -156,6 +164,21 @@
         <span class="empty-state-icon">${EMPTY_STATE_ICONS[iconKey] || ""}</span>
         <p class="empty-state-text">${messageHtml}</p>
         ${actionHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * 模板化富空态（v0.14）：图标 + 标题 + 1-2 句说明 + 一个 CTA。
+   * 垂直居中、上下留白用 --space-8；actionHtml 省略时只渲染引导文案。
+   */
+  function buildGuideEmptyStateHtml(iconKey, title, desc, actionHtml = "") {
+    return `
+      <div class="empty-state-rich">
+        <span class="empty-state-icon">${EMPTY_STATE_ICONS[iconKey] || ""}</span>
+        <p class="empty-state-title">${escapeHtml(title)}</p>
+        <p class="empty-state-text">${desc}</p>
+        ${actionHtml ? `<div class="empty-state-actions">${actionHtml}</div>` : ""}
       </div>
     `;
   }
@@ -306,7 +329,8 @@
   // v0.10.1: last-tab key 升级为 v3；旧 v1/v2 key 读到即丢弃（不迁移不报错）
   const LAST_TAB_KEY = "dashboard-last-tab-v3";
   const LEGACY_LAST_TAB_KEYS = ["dashboard-last-tab", "dashboard-last-tab-v2"];
-  const VALID_TABS = ["data", "reports", "sql-history"];
+  // v0.14: 新增 charts / materializations（顺序与侧栏 nav 一致，Alt+1~5 对应）
+  const VALID_TABS = ["data", "reports", "charts", "materializations", "sql-history"];
 
   // 注意：不在这里恢复上次 tab，因为此时模块还未定义，会触发 ReferenceError
   // 改为在 init() 完成后延迟恢复
@@ -328,6 +352,8 @@
       switch (tabId) {
         case "data": loadWorkbench(); break;
         case "reports": ReportsModule.load(); break;
+        case "charts": ChartsModule.load(); break;
+        case "materializations": MaterializationsModule.load(); break;
         case "sql-history": SqlHistoryModule.load(); break;
       }
     }
@@ -380,8 +406,13 @@
 
         // 填充左侧：正式分析报告
         if (analysisItems.length === 0) {
-          // v0.11 P2: 富空态（沿用原提示文案，无应用内行动入口故不带按钮）
-          analysisList.innerHTML = buildEmptyStateHtml("file-text", "暂无正式分析报告。在终端完成分析后执行 /report 生成");
+          // v0.14: 模板化富空态（图标 + 标题 + 说明 + CTA），CTA 展开下方过程记录
+          analysisList.innerHTML = buildGuideEmptyStateHtml(
+            "file-text",
+            "暂无正式分析报告",
+            "在终端完成分析后执行 <code>/report</code>，即可生成带图表的正式报告。",
+            '<button class="btn btn-sm" onclick="ReportsModule.toggleSessionRecords()">查看分析过程记录</button>'
+          );
         } else {
           analysisList.innerHTML = analysisItems.map((r) => {
             const modeTag = r.reportMode
@@ -421,7 +452,7 @@
                 ${coverageBar}
                 <div class="card-meta">
                   <span style="font-size:12px;color:var(--muted)">${formatDate(r.createdAt)}</span>
-                  ${r.datasets.map((d) => `<span class="tag tag-dataset">${escapeHtml(d)}</span>`).join("")}
+                  ${(r.datasets || []).map((d) => `<span class="tag tag-dataset">${escapeHtml(d)}</span>`).join("")}
                 </div>
                 <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                   <button class="btn btn-sm" style="font-size:11px;padding:2px 8px" onclick="event.stopPropagation();ReportsModule.openReport('${escapeHtml(r.id)}')">打开</button>
@@ -452,7 +483,7 @@
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
                   <span style="font-size:11px;color:var(--muted)">${formatDate(r.createdAt)}</span>
-                  ${r.datasets.map((d) => `<span class="tag tag-dataset" style="font-size:10px">${escapeHtml(d)}</span>`).join("")}
+                  ${(r.datasets || []).map((d) => `<span class="tag tag-dataset" style="font-size:10px">${escapeHtml(d)}</span>`).join("")}
                   ${chartCountHtml}
                 </div>
               </div>
@@ -917,7 +948,7 @@
                           <button class="btn btn-sm" style="font-size:11px;padding:1px 6px" onclick="event.stopPropagation();DictionariesModule.reviewColumn('${escapeHtml(col.name)}','uncertain')">不确定</button>
                         ` : ""}
                         ${editing
-                          ? `<button class="btn btn-sm btn-primary" style="font-size:11px;padding:1px 6px" onclick="DictionariesModule.saveColumn('${escapeHtml(col.name)}')">保存</button>
+                          ? `<button class="btn btn-sm" style="font-size:11px;padding:1px 6px" onclick="DictionariesModule.saveColumn('${escapeHtml(col.name)}')">保存</button>
                              <button class="btn btn-sm" style="font-size:11px;padding:1px 6px" onclick="DictionariesModule.cancelRowEdit()">取消</button>`
                           : `<button class="btn btn-sm" style="font-size:11px;padding:1px 6px" onclick="DictionariesModule.startEdit('${escapeHtml(col.name)}')">修改</button>`}
                       </div>
@@ -929,7 +960,7 @@
             </table>
           </div>
           <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-sm btn-primary" onclick="DictionariesModule.batchConfirm()">确认选中字段</button>
+            <button class="btn btn-sm" onclick="DictionariesModule.batchConfirm()">确认选中字段</button>
             <span style="font-size:12px;color:var(--muted)">勾选要确认的字段（uncertain 默认不勾选）</span>
           </div>
       `;
@@ -1190,7 +1221,7 @@
           document.getElementById("table-cards-content").innerHTML = buildEmptyStateHtml(
             "database",
             "暂无数据集。通过右上角「＋ 上传数据」或在 TUI 中加载数据，即可创建表卡片。",
-            '<button class="btn btn-sm btn-primary" onclick="Dashboard.openUploadModal()">＋ 上传数据</button>'
+            '<button class="btn btn-sm" onclick="Dashboard.openUploadModal()">＋ 上传数据</button>'
           );
           return;
         }
@@ -1245,8 +1276,9 @@
             ${this.mode === "edit"
               ? `<button class="btn btn-sm" onclick="TableCardsModule.cancelEdit()">取消</button>
                  <button class="btn btn-sm" onclick="TableCardsModule.save(false)">保存</button>
-                 <button class="btn btn-sm btn-primary" onclick="TableCardsModule.confirmCard()">确认</button>`
-              : `<button class="btn btn-sm btn-primary" onclick="TableCardsModule.startEdit()">修改</button>`}
+                 <button class="btn btn-sm" onclick="TableCardsModule.confirmCard()">确认</button>`
+              // v0.14: 每屏最多一个实心主按钮（页头「＋ 上传数据」），卡内操作降为次要
+              : `<button class="btn btn-sm" onclick="TableCardsModule.startEdit()">修改</button>`}
           </div>
         </div>
       `;
@@ -1449,9 +1481,10 @@
     const missingTitle = missingBits.length > 0 ? ` title="${escapeHtml(missingBits.join("｜"))}"` : "";
 
     // 时间跨度只取 min~max 的日期部分（YYYY-MM-DD）
+    // v0.14: 修掉「时间跨度 · 时间跨度」重复文案；缺失时用占位符 + 无时间列
     const timeSpan = profile.timeSpan || null;
     const spanValue = timeSpan ? `${toDatePart(timeSpan.min)} ~ ${toDatePart(timeSpan.max)}` : "—";
-    const spanLabel = timeSpan ? escapeHtml(timeSpan.column) : "时间跨度";
+    const spanLabel = timeSpan ? `时间跨度 · ${escapeHtml(timeSpan.column)}` : "无时间列";
 
     // 疑似主键重复：KPI 显示命中列数，明细进悬浮提示
     const pkSuspicion = profile.primaryKeySuspicion || [];
@@ -1459,21 +1492,22 @@
       ? ` title="${escapeHtml(pkSuspicion.map((p) => `${p.column}（${p.duplicateCount} 个重复值）`).join("、"))}"`
       : "";
 
+    // v0.14: 轻量 stat tile（透明底 + 顶部 3px 语义色），数字 mono + tabular-nums
     const kpiRowHtml = `
       <div class="kpi-row">
-        <div class="kpi-tile">
+        <div class="kpi-tile kpi-accent-brand">
           <span class="kpi-value">${Number(profile.rowCount || 0).toLocaleString()}</span>
           <span class="kpi-label">行 × ${Number(profile.columnCount || 0).toLocaleString()} 列</span>
         </div>
-        <div class="kpi-tile"${missingTitle}>
+        <div class="kpi-tile kpi-accent-warning"${missingTitle}>
           <span class="kpi-value">${missingCount}</span>
           <span class="kpi-label">缺失列${missingCount === 0 ? "（无缺失）" : ""}</span>
         </div>
-        <div class="kpi-tile">
+        <div class="kpi-tile kpi-accent-info">
           <span class="kpi-value kpi-value-range">${spanValue}</span>
-          <span class="kpi-label">时间跨度 · ${spanLabel}</span>
+          <span class="kpi-label">${spanLabel}</span>
         </div>
-        <div class="kpi-tile"${pkTitle}>
+        <div class="kpi-tile kpi-accent-danger"${pkTitle}>
           <span class="kpi-value">${pkSuspicion.length}</span>
           <span class="kpi-label">疑似主键重复</span>
         </div>
@@ -1512,8 +1546,7 @@
     return `
       <div class="profile-card">
         <div class="profile-card-header">
-          <span class="profile-card-title">📊 数据体检</span>
-          <span>${escapeHtml(profile.tableName)}${profile.degraded ? "（大表，仅基础体检）" : ""}</span>
+          <span class="profile-card-title">${escapeHtml(profile.tableName)}${profile.degraded ? "（大表，仅基础体检）" : ""}</span>
         </div>
         ${kpiRowHtml}
         ${dimsSection}
@@ -1550,11 +1583,12 @@
         this.lastDatasets = datasets;
 
         if (datasets.length === 0) {
-          // v0.11 P2: 富空态（沿用原提示文案 + 上传行动按钮）
-          document.getElementById("datasets-content").innerHTML = buildEmptyStateHtml(
+          // v0.14: 模板化富空态（图标 + 标题 + 说明 + CTA）
+          document.getElementById("datasets-content").innerHTML = buildGuideEmptyStateHtml(
             "database",
-            "暂无数据集。点击右上角「＋ 上传数据」，或在 TUI 中加载数据。",
-            '<button class="btn btn-sm btn-primary" onclick="Dashboard.openUploadModal()">＋ 上传数据</button>'
+            "暂无数据集",
+            "点击右上角「＋ 上传数据」，或在 TUI 中加载数据，之后即可在此查看预览与体检。",
+            '<button class="btn btn-sm" onclick="Dashboard.openUploadModal()">＋ 上传数据</button>'
           );
           document.getElementById("dataset-preview").innerHTML =
             '<p class="empty-state">上传或加载数据后，此处显示前 50 行预览。</p>';
@@ -1570,7 +1604,7 @@
 
         // v0.10.1: 上半区只渲染表选择器顶栏；预览/体检卡容器为静态 DOM（下半区）
         const html = `
-          <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
             <div>
               <label style="font-size:12px;color:var(--muted)">数据集</label>
               <select class="select" id="dataset-select" style="margin-top:4px">
@@ -1586,8 +1620,10 @@
                 <option value="200">200</option>
               </select>
             </div>
-            <div style="padding-top:20px;display:flex;gap:8px">
-              <button class="btn btn-sm" onclick="DatasetsModule.loadStats()">列统计</button>
+            <div class="toolbar-actions">
+              <button class="btn btn-sm btn-ghost" onclick="DatasetsModule.loadStats()">列统计</button>
+              <!-- v0.14: 危险操作与普通操作之间加分隔，避免权重接近 -->
+              <span class="action-divider" aria-hidden="true"></span>
               <button class="btn btn-sm btn-danger" onclick="DatasetsModule.deleteCurrent()" title="从 DuckDB 中永久删除该表">删除表</button>
             </div>
           </div>
@@ -1808,7 +1844,7 @@
     currentRevision: 0,
 
     async load() {
-      showLoading("sql-history-content");
+      showLoading("sql-history-panel");
       try {
         const res = await api.fetch(`/sql-history?page=1&size=50&sort=${this.currentSort}&status=${this.currentStatus}`);
         const { items, total } = res.data;
@@ -1817,20 +1853,20 @@
 
         if (items.length === 0) {
           // v0.11 P2: 富空态（沿用原提示文案，无应用内行动入口故不带按钮）
-          document.getElementById("sql-history-content").innerHTML = buildEmptyStateHtml("history", "暂无 SQL 查询记录。在 TUI 中执行查询后，记录将在此显示。");
+          document.getElementById("sql-history-panel").innerHTML = buildEmptyStateHtml("history", "暂无 SQL 查询记录。在 TUI 中执行查询后，记录将在此显示。");
           return;
         }
 
         const html = `
           <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-sm ${this.currentSort === 'recent' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setSort('recent')">最近使用</button>
-            <button class="btn btn-sm ${this.currentSort === 'useCount' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setSort('useCount')">使用频率</button>
+            <button class="btn btn-sm ${this.currentSort === 'recent' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setSort('recent')">最近使用</button>
+            <button class="btn btn-sm ${this.currentSort === 'useCount' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setSort('useCount')">使用频率</button>
             <span style="color:var(--border)">|</span>
-            <button class="btn btn-sm ${this.currentStatus === '' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setStatus('')">全部</button>
-            <button class="btn btn-sm ${this.currentStatus === 'active' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setStatus('active')">成功</button>
-            <button class="btn btn-sm ${this.currentStatus === 'outdated' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setStatus('outdated')">过时</button>
-            <button class="btn btn-sm ${this.currentStatus === 'failed' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setStatus('failed')">失败</button>
-            <button class="btn btn-sm ${this.currentStatus === 'archived' ? 'btn-primary' : ''}" onclick="SqlHistoryModule.setStatus('archived')">已归档</button>
+            <button class="btn btn-sm ${this.currentStatus === '' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setStatus('')">全部</button>
+            <button class="btn btn-sm ${this.currentStatus === 'active' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setStatus('active')">成功</button>
+            <button class="btn btn-sm ${this.currentStatus === 'outdated' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setStatus('outdated')">过时</button>
+            <button class="btn btn-sm ${this.currentStatus === 'failed' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setStatus('failed')">失败</button>
+            <button class="btn btn-sm ${this.currentStatus === 'archived' ? 'btn-selected' : ''}" onclick="SqlHistoryModule.setStatus('archived')">已归档</button>
             <span style="color:var(--muted);font-size:12px">${total} 条记录</span>
           </div>
           ${items.map((item) => `
@@ -1861,9 +1897,9 @@
             </div>
           `).join("")}`;
 
-        document.getElementById("sql-history-content").innerHTML = html;
+        document.getElementById("sql-history-panel").innerHTML = html;
       } catch (err) {
-        showError("sql-history-content", `加载失败: ${err.message}`);
+        showError("sql-history-panel", `加载失败: ${err.message}`);
       }
     },
 
@@ -2010,7 +2046,7 @@
           document.getElementById("metrics-content").innerHTML = `
             <p class="empty-state">暂无指标定义。定义常用指标的计算规则（如 GMV = 已支付订单金额求和），Agent 写 SQL 时会自动遵守。</p>
             <div style="text-align:center;margin-top:16px">
-              <button class="btn btn-primary" onclick="MetricsModule.showCreateForm()">新建指标</button>
+              <button class="btn" onclick="MetricsModule.showCreateForm()">新建指标</button>
             </div>`;
           return;
         }
@@ -2018,7 +2054,7 @@
         const html = `
           <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
             <span style="color:var(--muted);font-size:12px">${this.metrics.length} 条指标定义${this.legacy.length > 0 ? `，另有 ${this.legacy.length} 条历史口径` : ""}</span>
-            <button class="btn btn-sm btn-primary" onclick="MetricsModule.showCreateForm()">新建指标</button>
+            <button class="btn btn-sm" onclick="MetricsModule.showCreateForm()">新建指标</button>
             <span id="metrics-save-status" class="save-status"></span>
           </div>
           <div id="metrics-list">
@@ -2103,7 +2139,7 @@
             </div>
             <textarea class="inline-edit" id="metric-new-notes" placeholder="备注（选填）" rows="1" style="resize:vertical"></textarea>
             <div style="display:flex;gap:8px">
-              <button class="btn btn-sm btn-primary" onclick="MetricsModule.createMetric()">保存</button>
+              <button class="btn btn-sm" onclick="MetricsModule.createMetric()">保存</button>
               <button class="btn btn-sm" onclick="document.getElementById('metrics-form-area').innerHTML=''">取消</button>
             </div>
             <span id="metric-form-status" class="save-status"></span>
@@ -2158,7 +2194,7 @@
             </div>
             <textarea class="inline-edit" id="metric-edit-notes" rows="1" style="resize:vertical" placeholder="备注（选填）" oninput="MetricsModule.markDirty()">${escapeHtml(m.notes || "")}</textarea>
             <div style="display:flex;gap:8px">
-              <button class="btn btn-sm btn-primary" onclick="MetricsModule.updateMetric('${escapeHtml(m.id)}')">保存</button>
+              <button class="btn btn-sm" onclick="MetricsModule.updateMetric('${escapeHtml(m.id)}')">保存</button>
               <button class="btn btn-sm" onclick="MetricsModule.cancelMetricEdit()">取消</button>
             </div>
           </div>
@@ -2286,6 +2322,350 @@
   };
 
   // ========================================================================
+  // Module: 图表（v0.14：GET /api/charts —— 分页 + 数据集筛选 + 放大查看 + 复制重跑）
+  //   数据源字段（ChartSummary）：id / title / generatedAt / dataset /
+  //   sourceReport（来源报告文件）/ sourceReportId / thumbnailUrl（可能缺省）
+  // ========================================================================
+
+  const ChartsModule = {
+    page: 1,
+    size: 24,
+    totalPages: 1,
+    total: 0,
+    /** 当前数据集筛选（空串 = 全部） */
+    dataset: "",
+    items: [],
+
+    async load() {
+      const panel = document.getElementById("charts-panel");
+      if (!panel) return;
+      showLoading("charts-panel");
+
+      try {
+        const qs = `page=${this.page}&size=${this.size}${this.dataset ? `&dataset=${encodeURIComponent(this.dataset)}` : ""}`;
+        const res = await api.fetch(`/charts?${qs}`);
+        const { items, total, page, totalPages } = res.data;
+        this.items = items || [];
+        this.total = total || 0;
+        this.page = page || 1;
+        this.totalPages = totalPages || 1;
+
+        await this.syncDatasetFilter();
+
+        // 空状态必须有引导：图表由 generate_report 产生
+        if (this.items.length === 0) {
+          panel.innerHTML = buildGuideEmptyStateHtml(
+            "bar-chart",
+            "暂无图表",
+            "图表由 <code>generate_report</code> 产生——在对话中让 Agent 生成分析报告后，图表会自动收录到这里。",
+            '<button class="btn btn-sm" onclick="ChartsModule.copyRerunHint()">复制生成指令</button>'
+          );
+          return;
+        }
+
+        panel.innerHTML = `
+          <div class="charts-toolbar">
+            <span class="charts-count">共 <span class="num">${this.total}</span> 张图表${this.dataset ? ` · 数据集：${escapeHtml(this.dataset)}` : ""}</span>
+          </div>
+          <div class="chart-grid">
+            ${this.items.map((c) => this.renderCard(c)).join("")}
+          </div>
+          ${this.renderPagination()}
+        `;
+      } catch (err) {
+        showError("charts-panel", `加载失败: ${err.message}`);
+      }
+    },
+
+    /** 渲染单张图表卡（缩略图缺失时降级为占位卡） */
+    renderCard(chart) {
+      const title = chart.title || "未命名图表";
+      const thumb = chart.thumbnailUrl
+        ? `<img src="${escapeHtml(chart.thumbnailUrl)}" alt="${escapeHtml(title)}" loading="lazy" />`
+        : `<div class="chart-thumb-placeholder">${EMPTY_STATE_ICONS["bar-chart"]}<span>${escapeHtml(title)}</span></div>`;
+      return `
+        <div class="chart-card" role="button" tabindex="0" onclick="ChartsModule.openChart('${escapeHtml(chart.id)}')">
+          ${thumb}
+          <div class="chart-info">
+            <div class="chart-card-title">${escapeHtml(title)}</div>
+            <div class="chart-card-meta">
+              ${chart.dataset ? `<span class="tag tag-dataset">${escapeHtml(chart.dataset)}</span>` : ""}
+              <span class="chart-card-time num">${formatDate(chart.generatedAt)}</span>
+            </div>
+            ${chart.sourceReport ? `<div class="chart-card-source num" title="来源报告文件">📄 ${escapeHtml(chart.sourceReport)}</div>` : ""}
+            <div class="chart-card-actions">
+              <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();ChartsModule.copyRerun('${escapeHtml(chart.id)}')">复制重跑</button>
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    /** 顶部数据集筛选：选项 = 已加载数据集 ∪ 当前页图表用到的数据集 */
+    async syncDatasetFilter() {
+      const sel = document.getElementById("chart-dataset-filter");
+      if (!sel) return;
+      let names = [];
+      try {
+        const res = await api.fetch("/datasets");
+        names = (res.data || []).map((d) => d.name);
+      } catch { names = []; }
+      this.items.forEach((c) => { if (c.dataset && !names.includes(c.dataset)) names.push(c.dataset); });
+      if (this.dataset && !names.includes(this.dataset)) names.push(this.dataset);
+      sel.innerHTML =
+        `<option value="">全部数据集</option>` +
+        names.map((n) => `<option value="${escapeHtml(n)}"${n === this.dataset ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
+    },
+
+    async setDataset(dataset) {
+      this.dataset = dataset || "";
+      this.page = 1;
+      await this.load();
+    },
+
+    async setPage(page) {
+      const next = Math.min(Math.max(1, page), this.totalPages);
+      if (next === this.page) return;
+      this.page = next;
+      await this.load();
+    },
+
+    /** 分页条：页码窗口最多 7 个，两端省略 */
+    renderPagination() {
+      if (this.totalPages <= 1) return "";
+      const cur = this.page;
+      const total = this.totalPages;
+      const btn = (p) =>
+        p === cur
+          ? `<button class="pagination-btn active">${p}</button>`
+          : `<button class="pagination-btn" onclick="ChartsModule.setPage(${p})">${p}</button>`;
+      const pages = [];
+      let start = Math.max(1, cur - 3);
+      let end = Math.min(total, start + 6);
+      start = Math.max(1, end - 6);
+      if (start > 1) {
+        pages.push(btn(1));
+        if (start > 2) pages.push('<span class="pagination-info">…</span>');
+      }
+      for (let p = start; p <= end; p++) pages.push(btn(p));
+      if (end < total) {
+        if (end < total - 1) pages.push('<span class="pagination-info">…</span>');
+        pages.push(btn(total));
+      }
+      return `
+        <div class="pagination">
+          <button class="pagination-btn" ${cur <= 1 ? "disabled" : ""} onclick="ChartsModule.setPage(${cur - 1})">上一页</button>
+          ${pages.join("")}
+          <button class="pagination-btn" ${cur >= total ? "disabled" : ""} onclick="ChartsModule.setPage(${cur + 1})">下一页</button>
+          <span class="pagination-info">第 ${cur} / ${total} 页 · 共 ${this.total} 张</span>
+        </div>
+      `;
+    },
+
+    /** 点开放大查看（详情接口失败时用列表数据兜底） */
+    async openChart(chartId) {
+      let chart = this.items.find((c) => c.id === chartId) || null;
+      try {
+        const res = await api.fetch(`/charts/${encodeURIComponent(chartId)}`);
+        if (res.data) chart = res.data;
+      } catch { /* 详情不可用则沿用列表数据 */ }
+      if (!chart) return;
+
+      const title = chart.title || "图表";
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.id = "chart-viewer-overlay";
+      overlay.innerHTML = `
+        <div class="modal-dialog chart-viewer-dialog">
+          <div class="modal-header">
+            <h3>${escapeHtml(title)}</h3>
+            <button class="btn btn-sm" data-action="close">关闭</button>
+          </div>
+          <div class="modal-body">
+            <div class="chart-viewer-frame">
+              ${chart.thumbnailUrl
+                ? `<img src="${escapeHtml(chart.thumbnailUrl)}" alt="${escapeHtml(title)}" />`
+                : `<div class="chart-thumb-placeholder chart-thumb-placeholder-lg">${EMPTY_STATE_ICONS["bar-chart"]}<span>该图表暂无缩略图，可在来源报告中查看</span></div>`}
+            </div>
+            <dl class="chart-viewer-meta">
+              <div><dt>数据集</dt><dd>${chart.dataset ? escapeHtml(chart.dataset) : "—"}</dd></div>
+              <div><dt>生成时间</dt><dd class="num">${formatDate(chart.generatedAt)}</dd></div>
+              ${chart.sourceReport ? `<div><dt>来源报告</dt><dd class="num">${escapeHtml(chart.sourceReport)}</dd></div>` : ""}
+            </dl>
+            <div class="modal-footer">
+              <button class="btn btn-sm" onclick="ChartsModule.copyRerun('${escapeHtml(chart.id)}')">复制回对话重跑</button>
+              <button class="btn btn-sm" data-action="close">关闭</button>
+            </div>
+          </div>
+        </div>`;
+
+      const close = () => overlay.remove();
+      overlay.addEventListener("click", (e) => {
+        const action = e.target.dataset?.action;
+        if (action === "close" || e.target === overlay) close();
+      });
+      const escHandler = (e) => {
+        if (e.key === "Escape") { close(); document.removeEventListener("keydown", escHandler); }
+      };
+      document.addEventListener("keydown", escHandler);
+      document.body.appendChild(overlay);
+    },
+
+    /**
+     * 复制回对话重跑：ChartSummary 不带 SQL，故复制标题 + 数据集 + 来源报告，
+     * 粘回对话即可让 Agent 重跑同源分析。
+     */
+    copyRerun(chartId) {
+      const chart = this.items.find((c) => c.id === chartId);
+      if (!chart) { showToast("图表信息缺失，无法生成重跑指令", "warning"); return; }
+      const lines = [`请重新生成图表「${chart.title || "未命名图表"}」`];
+      if (chart.dataset) lines.push(`数据集：${chart.dataset}`);
+      if (chart.sourceReport) lines.push(`来源报告：${chart.sourceReport}`);
+      copyToClipboard(lines.join("\n"));
+    },
+
+    /** 空状态 CTA：复制生成图表的指令 */
+    copyRerunHint() {
+      copyToClipboard("请运行 generate_report 生成分析报告，并把产出的图表收录到 Dashboard");
+    },
+  };
+
+  // ========================================================================
+  // Module: 本地副本（v0.14：GET /api/materializations —— 物化清单 + 漂移状态）
+  //   数据源字段：targetTable / alias / table / rows / columns / sourceRowCount /
+  //   durationMs / endpoint（无凭据）/ dbSizeBefore / dbSizeAfter / decimalWarnings /
+  //   materializedAt / localExists / currentRows / drift / driftState
+  // ========================================================================
+
+  /** driftState → 徽章语义色 class + 中文标签 */
+  const DRIFT_BADGES = {
+    synced: { cls: "matz-badge-success", label: "已同步" },
+    ahead: { cls: "matz-badge-info", label: "本地更多" },
+    stale: { cls: "matz-badge-warning", label: "本地过期" },
+    dropped: { cls: "matz-badge-danger", label: "副本已删除" },
+    unknown: { cls: "matz-badge-muted", label: "状态未知" },
+  };
+
+  /** 字节数 → B / KB / MB / GB（.duckdb 体积展示） */
+  function formatBytes(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n)) return "—";
+    const units = ["B", "KB", "MB", "GB"];
+    let v = Math.abs(n);
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    const text = `${v.toFixed(i === 0 || v >= 100 ? 0 : 1)} ${units[i]}`;
+    return n < 0 ? `-${text}` : text;
+  }
+
+  /** 耗时 → "312 ms" / "1.2 s" */
+  function formatDuration(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n)) return "—";
+    return n >= 1000 ? `${(n / 1000).toFixed(1)} s` : `${Math.round(n)} ms`;
+  }
+
+  const MaterializationsModule = {
+    items: [],
+
+    async load() {
+      const panel = document.getElementById("materializations-panel");
+      if (!panel) return;
+      showLoading("materializations-panel");
+
+      try {
+        const res = await api.fetch("/materializations");
+        this.items = (res.data && res.data.items) || [];
+
+        // 说明性文案：讲清楚只读快照 + 改动回对话
+        const intro = `<p class="panel-note">本地副本是远端表的<strong>只读快照</strong>，用于加速重复查询，不会回写远端；需要替换或删除副本，请回到对话里让 Agent 执行。</p>`;
+
+        if (this.items.length === 0) {
+          panel.innerHTML = intro + buildGuideEmptyStateHtml(
+            "layers",
+            "暂无本地副本",
+            "当远程大表需要反复查询时，在对话里让 Agent 执行 <code>materialize_remote_table</code>，把只读快照拉到本地加速。",
+            '<button class="btn btn-sm" onclick="MaterializationsModule.copyToolHint()">复制工具名</button>'
+          );
+          return;
+        }
+
+        panel.innerHTML = intro + `
+          <div class="matz-list">
+            ${this.items.map((m) => this.renderCard(m)).join("")}
+          </div>`;
+      } catch (err) {
+        showError("materializations-panel", `加载失败: ${err.message}`);
+      }
+    },
+
+    /** 渲染单条物化卡：源表 → 本地表 + 度量 + 漂移徽章 */
+    renderCard(m) {
+      const state = DRIFT_BADGES[m.driftState] ? m.driftState : "unknown";
+      const badge = DRIFT_BADGES[state];
+
+      // 漂移：当前行数 vs 物化时远端行数（±差值）
+      const delta = m.drift === null || m.drift === undefined || !Number.isFinite(Number(m.drift))
+        ? null
+        : Number(m.drift);
+      const driftLine = !m.localExists
+        ? "本地表已不存在（副本已被移除）"
+        : m.currentRows === null || m.currentRows === undefined
+          ? "无法读取当前行数"
+          : `当前 <span class="num">${Number(m.currentRows).toLocaleString()}</span> 行 vs 物化时 <span class="num">${Number(m.sourceRowCount).toLocaleString()}</span> 行（<span class="num">${delta === null ? "±?" : `${delta > 0 ? "+" : ""}${delta}`}</span>）`;
+
+      // .duckdb 体积变化（after - before）
+      let sizeLine = "";
+      if (m.dbSizeBefore !== null && m.dbSizeBefore !== undefined &&
+          m.dbSizeAfter !== null && m.dbSizeAfter !== undefined) {
+        const deltaBytes = Number(m.dbSizeAfter) - Number(m.dbSizeBefore);
+        const sign = deltaBytes > 0 ? "+" : deltaBytes === 0 ? "±" : "";
+        sizeLine = `<div class="matz-line"><span class="matz-line-label">.duckdb 体积</span><span class="num">${formatBytes(m.dbSizeBefore)} → ${formatBytes(m.dbSizeAfter)}（${sign}${formatBytes(Math.abs(deltaBytes))}）</span></div>`;
+      }
+
+      const warnings = (m.decimalWarnings && m.decimalWarnings.length > 0)
+        ? `<div class="matz-warnings">${m.decimalWarnings.map((w) => `<span class="tag tag-warning" title="精度降级提示">${escapeHtml(w)}</span>`).join("")}</div>`
+        : "";
+
+      return `
+        <div class="card matz-card matz-state-${state}">
+          <div class="matz-head">
+            <div class="matz-route">
+              <span class="matz-node">
+                <span class="matz-node-label">远端</span>
+                <span class="matz-node-value num">${escapeHtml(m.alias)}.${escapeHtml(m.table)}</span>
+              </span>
+              <span class="matz-arrow" aria-hidden="true">→</span>
+              <span class="matz-node">
+                <span class="matz-node-label">本地</span>
+                <span class="matz-node-value num">${escapeHtml(m.targetTable)}</span>
+              </span>
+            </div>
+            <span class="matz-badge ${badge.cls}">${badge.label}</span>
+          </div>
+          <div class="matz-stats">
+            <div class="matz-stat"><span class="matz-stat-value num">${Number(m.rows || 0).toLocaleString()} × ${Number(m.columns || 0).toLocaleString()}</span><span class="matz-stat-label">行 × 列</span></div>
+            <div class="matz-stat"><span class="matz-stat-value num">${formatDuration(m.durationMs)}</span><span class="matz-stat-label">物化耗时</span></div>
+            <div class="matz-stat"><span class="matz-stat-value num">${formatDate(m.materializedAt)}</span><span class="matz-stat-label">物化时间</span></div>
+          </div>
+          <div class="matz-lines">
+            <div class="matz-line"><span class="matz-line-label">漂移</span><span>${driftLine}</span></div>
+            ${m.endpoint ? `<div class="matz-line"><span class="matz-line-label">endpoint</span><span class="num">${escapeHtml(m.endpoint)}</span></div>` : ""}
+            ${sizeLine}
+          </div>
+          ${warnings}
+          <div class="matz-note">只读快照：修改或移除副本请回到对话里让 Agent 执行。</div>
+        </div>
+      `;
+    },
+
+    /** 空状态 CTA：复制工具名，粘回对话即可发起物化 */
+    copyToolHint() {
+      copyToClipboard("materialize_remote_table");
+    },
+  };
+
+  // ========================================================================
   // Init
   // ========================================================================
 
@@ -2296,6 +2676,9 @@
 
   window.SqlHistoryModule = SqlHistoryModule;
   window.MetricsModule = MetricsModule;
+  // v0.14: 两个新视图（侧栏 nav / header 下拉的 onclick 依赖 window 全局）
+  window.ChartsModule = ChartsModule;
+  window.MaterializationsModule = MaterializationsModule;
 
   // ========================================================================
   // v0.12 M-8: 连接指示器——活跃远程连接 + 白名单状态（GET /api/connections）
@@ -2338,8 +2721,7 @@
       const next = current === "dark" ? "light" : "dark";
       html.setAttribute("data-theme", next);
       localStorage.setItem("dashboard-theme", next);
-      const btn = document.getElementById("theme-toggle-btn");
-      if (btn) btn.textContent = next === "dark" ? "🌙" : "☀️";
+      // 图标切换交给 CSS（[data-theme] 下 .icon-moon/.icon-sun），不覆盖按钮内容
     },
 
     refreshPanel(panel) {
@@ -2426,10 +2808,7 @@
     },
   };
 
-  // 设置初始主题图标
-  const initTheme = document.documentElement.getAttribute("data-theme");
-  const themeBtn = document.getElementById("theme-toggle-btn");
-  if (themeBtn) themeBtn.textContent = initTheme === "light" ? "☀️" : "🌙";
+  // 主题图标由 CSS 按 [data-theme] 切换，这里不再改写按钮内容（会清掉 SVG）
 
   // ========================================================================
   // v0.11 P2: SQL 代码块复制——document 级事件委托，集中绑定一次，
@@ -2450,7 +2829,7 @@
 
   // 全局键盘快捷键
   document.addEventListener("keydown", (e) => {
-    // Alt+1~3 切换 Tab（v0.10.1：3 Tab）
+    // Alt+1~5 切换 Tab（v0.14：数据 / 报告 / 图表 / 本地副本 / SQL 历史）
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       const idx = parseInt(e.key, 10) - 1;
       if (idx >= 0 && idx < VALID_TABS.length) {

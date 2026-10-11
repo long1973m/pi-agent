@@ -8,7 +8,7 @@
 
 | 事项 | 来源版本 | 当前状态 | 备注 |
 |------|----------|----------|------|
-| PostgreSQL / MySQL 连接 | v0.2 §1.3（v0.3 再推） | MySQL 阶段 1 代码已交付（v0.12）；真机验收与 PG 未开始 | **v0.2 起最长欠账**。MySQL 只读 ATTACH 已实现并有本地测试；§12 真机清单（成功连接、下推、写入拦截、字符集、DECIMAL、慢查询中断）仍挂起。阻塞点：连接串安全、DuckDB 扩展依赖、网络访问 |
+| PostgreSQL / MySQL 连接 | v0.2 §1.3（v0.3 再推） | MySQL 阶段 1 代码已交付（v0.12）；**真机验收主要项已过（v0.14.2，2026-10-10）**，PG 未开始 | §12 真机清单：成功连接、COUNT 下推、写入拦截、DECIMAL 精度已验证（本机沙箱 MySQL 8.4.7，7/7 通过，见 v0.14-EXECUTION_SPEC §11 v0.14.2）；**仍挂起**：慢查询中断可靠性、字符集专项（中文/emoji 往返）、多字节 collation。阻塞点：PG 未接入 |
 | 冷历史 embedding 召回 | v0.2 §1.3（v0.3 再推） | 未开始 | 查询记忆规模未到阈值；建议规模超千条后再评估 |
 | 本地模型支持（Ollama） | 初版 EXECUTION_SPEC §推迟表（v0.3+） | 未开始 | LLM 调用已收敛到 llm/call-llm.ts，可在此层扩展 |
 | ML Skill（细粒度拆分） | 初版 EXECUTION_SPEC §推迟表（v0.4+）；v0.2 拆为 statistical-analysis / database-analysis Skill | 未开始 | 依赖 Python 环境标准化（见 requirements 版本钉死冲突问题） |
@@ -30,12 +30,14 @@
 | 数据字典 LLM 全自动化 | v0.2 §1.3（v0.3 再推） | 部分（confirm-dictionary 手动确认流） | API 能力与隐私边界未完全确认；交互重做见下条 |
 | 字典 AI 推断交互重做 | v0.10 §9 | 未开始 | 等用户补充"不好用"的具体表现后再动 |
 | 表分类的自动聚类/层级目录 | v0.10 §9 | 未开始 | v0.10 先用 tags，表多了再演进 |
-| 视觉整体翻新（卡片/留白/字号层级） | v0.10 §9 | 未开始 | 等信息架构稳定后一次做，避免返工 |
+| 视觉整体翻新（卡片/留白/字号层级） | v0.10 §9 | 已交付（v0.14.3，2026-10-10） | 统一 `.panel` 容器、三级标题层级、按钮语义（主/次/幽灵/危险+分隔线）、模板化空态、自绘下拉与聚焦环、导航活跃态指示条、KPI 顶部语义色条；深浅双主题均验收 |
+| Dashboard 图表中心 + 本地副本视图 | 用户口述（2026-10-10） | 已交付（v0.14.3） | 图表 tab 调已有 `/api/charts`（缩略图卡 / 数据集筛选 / 分页 / 大图预览 / 复制重跑）；本地副本 tab 新增 `materialization-store` + `GET /api/materializations`（行数漂移 / 体积变化 / 精度提示） |
 | L2 即时注入（query_data 自动附卡片/指标） | v0.10 §9.1 | 已交付（v0.13 阶段一，2026-09-27） | 设计 §9.1 原样落地，内容三类：表卡片 / 指标口径 / uncertain 警示（历史样例撤除，L0 已覆盖）；spec：v0.13-EXECUTION_SPEC.md §3 |
-| 远程表物化（materialize_remote_table） | 原 v0.13 spec（2026-09-01） | 未开始 | spec 已改号为 v0.14-EXECUTION_SPEC.md（2026-09-26，v0.13 槽位让位「可信分析官」主题）；不依赖真机 MySQL，sqlite ATTACH 替身即可开发 |
+| 远程表物化（materialize_remote_table） | 原 v0.13 spec（2026-09-01） | 已交付（v0.14.1，2026-10-10） | spec：v0.14-EXECUTION_SPEC.md；sqlite ATTACH 替身开发，不依赖真机 MySQL；六步流（校验→COUNT 熔断→确认门→tmp/rename 原子替换→字典→摘要），14 用例全绿 |
 | MCP 服务暴露知识库 | v0.10 §9 | 未开始 | 仅当需要 pi 之外 Agent 共享时再做 |
-| load_data 文件不存在误报为"非 Excel" | v0.13 S0 演练（F1，2026-09-27） | 未开始 | `readMagicBytes` 把 ENOENT 归入 null，Excel 路径一律报"文件头校验失败"；应区分"文件不存在"与"格式不符" |
-| load_data 缺 read_csv_auto 参数透传 | v0.13 S0 演练（F2，2026-09-27） | 未开始 | 真实导出混合日期格式（如 12/13/10 9:02）嗅探失败整表拒绝，无 types/dateformat 逃生参数；当前 workaround = 预处理 ISO |
+| load_data 文件不存在误报为"非 Excel" | v0.13 S0 演练（F1，2026-09-27） | 已交付（v0.14.4，2026-10-11） | `loadFileIntoTable` 入口先 `existsSync` 拦截，返回「文件不存在: 路径」reason，不再走到 magic bytes 误报 |
+| load_data 缺 read_csv_auto 参数透传 | v0.13 S0 演练（F2，2026-09-27） | 已交付（v0.14.4，2026-10-11） | 新增 `read_options`（header/dateformat/timestampformat/sample_size/ignore_errors/all_varchar/null_padding/delimiter/types），`buildDuckDBReadSql` 统一转义拼接，csv/tsv/Excel 临时 CSV 生效；混合日期逃生口就绪 |
+| 打包为 Pi package（pi.dev 收录就绪） | 易用性清单（用户口述，2026-10-11） | 已交付（v0.14.4，2026-10-11） | package.json 补 `pi` manifest + `pi-package` keyword + `files` 白名单 + repository/description；Pi 核心包移入 peerDependencies（`*`）；`pi install ./` 本地冒烟通过；**已发布 npm**（账号 long1973m，registry.npmjs.org，latest=0.14.4，2026-10-11）→ pi.dev 自动收录；npm 建包时产生的 0.0.0-stage 占位桩因 bypass 令牌禁 unpublish 留存（无影响） |
 | SQL Server 接入（mssql 社区扩展） | v0.12 调研（research/other-database-support-research.md §2） | 未开始 | 触发条件=真实需求。127★/活跃/MIT【GitHub API 2026-08-31】；secret type、超时默认值🔴待验证；注意 community 扩展与 DuckDB 版本配对风险 |
 | MongoDB / ClickHouse 旁路物化 | v0.12 调研（同上 §2） | 未开始 | 无 DuckDB 扩展；走「导出→NDJSON→read_json_auto 落表」，复用文件导入管线，2–3 人天/个 |
 | KingbaseES 兼容性验证 | v0.12 调研（同上 §2） | 未开始 | 国产化需求出现时验证：PG 协议兼容，理论上 postgres 扩展可直接 ATTACH，🔴待验证 |

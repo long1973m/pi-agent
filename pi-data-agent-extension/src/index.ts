@@ -51,6 +51,8 @@ import type { NavCardInfo } from "./navigation/nav-context.js";
 import { listActiveMetricDefinitions } from "./metrics/metric-definitions.js";
 import { createGetTableCardTool } from "./tools/get-table-card.js";
 import { createRunAnalysisTemplateTool } from "./tools/run-analysis-template.js";
+// v0.14 RM-2: 远程表物化到本地
+import { createMaterializeRemoteTableTool } from "./tools/materialize-remote.js";
 import { generateDatasetFingerprintSync } from "./utils/dataset-fingerprint.js";
 import { startDashboard, stopDashboard, stopAllDashboards } from "./dashboard/lifecycle.js";
 import { createDashboardServer } from "./dashboard/server.js";
@@ -434,7 +436,9 @@ const factory: ExtensionFactory = async (pi: ExtensionAPI) => {
   pi.registerTool(createGetTableCardTool(toolParams));
   // v0.13 TPL-1: PM 分析模板（funnel/cohort，确定性统计；ab_test 阶段三扩展）
   pi.registerTool(createRunAnalysisTemplateTool(toolParams));
-  logger.debug("Registered 15 tools: load_data, describe_data, query_data, transform_data, list_datasets, ask_clarification, export_result, visualize, show_image, connect_database, confirm_dictionary, generate_report, generate_session_report, get_table_card, run_analysis_template");
+  // v0.14 RM-2: 远程表物化到本地（探测→熔断→确认门→tmp→rename）
+  pi.registerTool(createMaterializeRemoteTableTool(toolParams));
+  logger.debug("Registered 16 tools: load_data, describe_data, query_data, transform_data, list_datasets, ask_clarification, export_result, visualize, show_image, connect_database, confirm_dictionary, generate_report, generate_session_report, get_table_card, run_analysis_template, materialize_remote_table");
 
   // ========================================================================
   // Phase 3: tool_call Hook（主动反问拦截）

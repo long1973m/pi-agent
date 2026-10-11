@@ -23,6 +23,7 @@ import { existsSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
 import { defineScriptSuite } from "./helpers/vitest-suite.js";
+import { pythonChartingAvailable, pythonChartingSkipReason } from "./helpers/python-charting.js";
 
 const TEST_CWD = cwd();
 const FIXTURES_DIR = join(TEST_CWD, "src", "eval", "fixtures");
@@ -227,23 +228,29 @@ async function runBusinessScenarioTests(): Promise<void> {
   // B7: 可视化选择 — 展示销售趋势 → line chart
   // ========================================================================
   console.log("\n[B7] 展示销售趋势 → line chart");
-  const b7Result = await visualizeTool.execute(
-    "b7",
-    {
-      sql: `SELECT date, SUM(sales_amount) AS total_sales FROM sales_daily GROUP BY date ORDER BY date`,
-      chart_type: "line",
-      x_column: "date",
-      y_column: "total_sales",
-      title: "Daily Sales Trend",
-    },
-    undefined, undefined, mockCtx
-  );
-  const b7Details = b7Result.details as Record<string, any> | undefined;
-  assert("B7: visualize 成功", b7Details?.success === true, JSON.stringify(b7Details));
-  const b7PngPath = b7Details?.pngPath as string | undefined;
-  assert("B7: PNG 路径返回", !!b7PngPath);
-  assert("B7: PNG 文件存在", b7PngPath ? existsSync(b7PngPath) : false);
-  assert("B7: PNG 大小 > 0", b7PngPath ? (statSync(b7PngPath).size > 0) : false);
+  // 绘图依赖缺失时整段跳过（提示安装命令），不把环境问题算作失败
+  let b7PngPath: string | undefined;
+  if (pythonChartingAvailable()) {
+    const b7Result = await visualizeTool.execute(
+      "b7",
+      {
+        sql: `SELECT date, SUM(sales_amount) AS total_sales FROM sales_daily GROUP BY date ORDER BY date`,
+        chart_type: "line",
+        x_column: "date",
+        y_column: "total_sales",
+        title: "Daily Sales Trend",
+      },
+      undefined, undefined, mockCtx
+    );
+    const b7Details = b7Result.details as Record<string, any> | undefined;
+    assert("B7: visualize 成功", b7Details?.success === true, JSON.stringify(b7Details));
+    b7PngPath = b7Details?.pngPath as string | undefined;
+    assert("B7: PNG 路径返回", !!b7PngPath);
+    assert("B7: PNG 文件存在", b7PngPath ? existsSync(b7PngPath) : false);
+    assert("B7: PNG 大小 > 0", b7PngPath ? (statSync(b7PngPath).size > 0) : false);
+  } else {
+    console.log(`  SKIP — ${pythonChartingSkipReason()}`);
+  }
 
   // ========================================================================
   // B8: 字段确认 — premium/claim_amount 字段含义确认

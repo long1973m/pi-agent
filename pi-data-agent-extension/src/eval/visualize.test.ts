@@ -322,4 +322,4 @@ async function runVisualizeTests(): Promise<void> {
   }
 }
 
-defineScriptSuite("visualize", runVisualizeTests);
+defineScriptSuite("visualize", runVisualizeTests, { requiresPython: true });

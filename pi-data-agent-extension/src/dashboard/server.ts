@@ -37,6 +37,7 @@ import { createReportsRouter } from "./routes/reports.js";
 import { createDictionariesRouter } from "./routes/dictionaries.js";
 import { createDatasetsRouter } from "./routes/datasets.js";
 import { createChartsRouter } from "./routes/charts.js";
+import { createMaterializationsRouter } from "./routes/materializations.js";
 import { createSqlHistoryRouter } from "./routes/sql-history.js";
 import { createMetricsRouter } from "./routes/metrics.js";
 import { createUploadRouter } from "./routes/upload.js";
@@ -145,6 +146,7 @@ export async function createDashboardServer(
   app.use(createDictionariesRouter(deps));
   app.use(createDatasetsRouter(deps));
   app.use(createChartsRouter(deps));
+  app.use(createMaterializationsRouter(deps));
   app.use(createSqlHistoryRouter(deps));
   app.use(createMetricsRouter(deps));
   app.use(createTableCardsRouter(deps));

@@ -82,8 +82,9 @@ export interface ExtensionLoadFailure {
  * 显式 INSTALL + LOAD 扩展（v0.12 M-4/M-7 共用封装）
  *
  * 不再依赖 DuckDB 静默自动下载：离线/受限网络下显式失败，
- * 返回预置扩展的降级指引（预置路径格式 ~/.duckdb/extensions/<version>/<os>_<arch>/，
- * 或 SET extension_directory = '/path/to/extensions'）。
+ * 返回预置扩展的降级指引。预置目录 = 当前 home_directory 下的 .duckdb/extensions/
+ * （引擎把 home_directory 指向项目目录，故不是 ~/.duckdb/extensions），
+ * 或 SET extension_directory = '/path/to/extensions'。
  */
 export async function ensureExtensionLoaded(
   engine: DuckDBEngine,
@@ -95,14 +96,25 @@ export async function ensureExtensionLoaded(
     return { ok: true };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
+    // 引擎把 home_directory 指向项目目录，扩展查找路径跟着它走；
+    // 必须报真实路径，否则用户按 ~/.duckdb/extensions 预置不会被命中。
+    let extDirHint = "~/.duckdb/extensions";
+    try {
+      const homeRow = await engine.query("SELECT current_setting('home_directory')");
+      const home = String(homeRow.rows[0]?.[0] ?? "").replace(/\/+$/, "");
+      if (home) extDirHint = `${home}/.duckdb/extensions`;
+    } catch {
+      // 查询失败保持通用文案
+    }
     return {
       ok: false,
       guidance:
         `Failed to install/load DuckDB extension "${extensionName}" (common in offline or ` +
         `network-restricted environments). Remediation: pre-download the extension for your ` +
-        `DuckDB version into ~/.duckdb/extensions/<duckdb_version>/<os>_<arch>/ ` +
-        `(e.g. ~/.duckdb/extensions/v1.5.4/osx_arm64/${extensionName}.duckdb_extension), ` +
-        `or SET extension_directory to a local directory containing it. ` +
+        `DuckDB version into ${extDirHint}/<duckdb_version>/<os>_<arch>/ ` +
+        `(e.g. ${extDirHint}/v1.5.4/osx_arm64/${extensionName}.duckdb_extension) — this is the ` +
+        `directory this engine actually searches; a copy under ~/.duckdb/extensions alone will ` +
+        `not be picked up. Alternatively SET extension_directory to a local directory containing it. ` +
         `Detail: ${raw.slice(0, 200)}`,
     };
   }

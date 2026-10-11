@@ -92,6 +92,8 @@ export interface SecurityConfig {
   dbAllowedHosts: string[];
   /** v0.12 M-1: 远程查询超时（毫秒） */
   dbQueryTimeoutMs: number;
+  /** v0.14 RM-1: 单次远程表物化的行数硬熔断 */
+  dbMaxMaterializeRows: number;
 }
 
 /** 安全检查动作 */

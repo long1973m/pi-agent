@@ -191,3 +191,31 @@ describe("loadConfig timeout normalization", () => {
     expect(loadConfig({ cwd: root }).dbQueryTimeoutMs).toBe(300000);
   });
 });
+
+// v0.14 RM-1: 物化行数硬熔断配置
+describe("loadConfig dbMaxMaterializeRows", () => {
+  it("defaults to 500_000", () => {
+    expect(loadConfig({ cwd: root }).dbMaxMaterializeRows).toBe(500_000);
+  });
+
+  it("applies overrides > env > project > defaults", () => {
+    writeProject(root, { dbMaxMaterializeRows: 100_000 });
+    expect(loadConfig({ cwd: root }).dbMaxMaterializeRows).toBe(100_000);
+    vi.stubEnv("PI_DATA_AGENT_DB_MAX_MATERIALIZE_ROWS", "250000");
+    expect(loadConfig({ cwd: root }).dbMaxMaterializeRows).toBe(250_000);
+    expect(loadConfig({ cwd: root, dbMaxMaterializeRows: 42 }).dbMaxMaterializeRows).toBe(42);
+  });
+
+  it.each([
+    [0, 500_000], [-1, 500_000], [12345.6, 12345], [NaN, 500_000], [Infinity, 500_000],
+  ])("normalizes invalid/non-positive override %s to %s", (input, expected) => {
+    expect(loadConfig({ cwd: root, dbMaxMaterializeRows: input }).dbMaxMaterializeRows).toBe(expected);
+  });
+
+  it("falls back for invalid env value", () => {
+    vi.stubEnv("PI_DATA_AGENT_DB_MAX_MATERIALIZE_ROWS", "invalid");
+    expect(loadConfig({ cwd: root }).dbMaxMaterializeRows).toBe(500_000);
+    vi.stubEnv("PI_DATA_AGENT_DB_MAX_MATERIALIZE_ROWS", "-5");
+    expect(loadConfig({ cwd: root }).dbMaxMaterializeRows).toBe(500_000);
+  });
+});

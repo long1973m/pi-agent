@@ -17,6 +17,7 @@ import { writeFileSync, mkdirSync, existsSync, statSync, unlinkSync } from "node
 import { join } from "node:path";
 import { cwd } from "node:process";
 import { defineScriptSuite } from "./helpers/vitest-suite.js";
+import { pythonChartingAvailable, pythonChartingSkipReason } from "./helpers/python-charting.js";
 
 const TEST_CWD = cwd();
 const EVAL_DIR = join(TEST_CWD, ".pi-data-agent", "eval");
@@ -119,39 +120,46 @@ async function runIntegrationTests(): Promise<void> {
   const loadDetails = loadResult.details as Record<string, any> | undefined;
   assert("load_data success", loadDetails?.tableName === "iris");
 
-  // Step 2: visualize → bar chart PNG
-  console.log("\n[Step 2] visualize → bar chart PNG");
-  const vizResult = await visualizeTool.execute(
-    "test-viz",
-    {
-      sql: "SELECT species, COUNT(*) AS cnt FROM iris GROUP BY species ORDER BY species",
-      chart_type: "bar",
-      x_column: "species",
-      y_column: "cnt",
-      title: "Iris Species Count",
-    },
-    undefined, undefined, mockCtx
-  );
-  const vizDetails = vizResult.details as Record<string, any> | undefined;
-  assert("visualize success", vizDetails?.success === true, JSON.stringify(vizDetails));
-  const pngPath = vizDetails?.pngPath as string | undefined;
-  assert("PNG path returned", !!pngPath);
-  assert("PNG file exists", pngPath ? existsSync(pngPath) : false);
-  assert("PNG size > 0", pngPath ? (statSync(pngPath).size > 0) : false);
+  // Step 2+3: 绘图链路依赖 Python 环境（缺依赖时整段跳过并提示安装命令，
+  // 不把环境问题伪装成测试失败，避免掩盖真回归）
+  let pngPath: string | undefined;
+  if (pythonChartingAvailable()) {
+    // Step 2: visualize → bar chart PNG
+    console.log("\n[Step 2] visualize → bar chart PNG");
+    const vizResult = await visualizeTool.execute(
+      "test-viz",
+      {
+        sql: "SELECT species, COUNT(*) AS cnt FROM iris GROUP BY species ORDER BY species",
+        chart_type: "bar",
+        x_column: "species",
+        y_column: "cnt",
+        title: "Iris Species Count",
+      },
+      undefined, undefined, mockCtx
+    );
+    const vizDetails = vizResult.details as Record<string, any> | undefined;
+    assert("visualize success", vizDetails?.success === true, JSON.stringify(vizDetails));
+    pngPath = vizDetails?.pngPath as string | undefined;
+    assert("PNG path returned", !!pngPath);
+    assert("PNG file exists", pngPath ? existsSync(pngPath) : false);
+    assert("PNG size > 0", pngPath ? (statSync(pngPath).size > 0) : false);
 
-  // Step 3: show_image → display PNG
-  console.log("\n[Step 3] show_image → display PNG");
-  const showResult = await showImageTool.execute(
-    "test-show",
-    { file_path: pngPath! },
-    undefined, undefined, mockCtx
-  );
-  const showDetails = showResult.details as Record<string, any> | undefined;
-  assert("show_image success", showDetails?.success === true);
-  const hasImageContent = showResult.content.some((c: any) => c.type === "image");
-  assert("show_image has image content", hasImageContent);
-  assert("show_image has text description", showResult.content.some((c: any) => c.type === "text"));
-  assert("show_image mimeType is image/png", showResult.content.some((c: any) => c.type === "image" && c.mimeType === "image/png"));
+    // Step 3: show_image → display PNG
+    console.log("\n[Step 3] show_image → display PNG");
+    const showResult = await showImageTool.execute(
+      "test-show",
+      { file_path: pngPath! },
+      undefined, undefined, mockCtx
+    );
+    const showDetails = showResult.details as Record<string, any> | undefined;
+    assert("show_image success", showDetails?.success === true);
+    const hasImageContent = showResult.content.some((c: any) => c.type === "image");
+    assert("show_image has image content", hasImageContent);
+    assert("show_image has text description", showResult.content.some((c: any) => c.type === "text"));
+    assert("show_image mimeType is image/png", showResult.content.some((c: any) => c.type === "image" && c.mimeType === "image/png"));
+  } else {
+    console.log(`\n[Step 2/3] SKIP — ${pythonChartingSkipReason()}`);
+  }
 
   // Cleanup
   await engine.close();

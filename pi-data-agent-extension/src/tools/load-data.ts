@@ -41,6 +41,28 @@ const MAX_EXCEL_CELLS = 5_000_000;
 /** Excel 解析防护：转换后 CSV 文本体积上限 */
 const MAX_EXCEL_CSV_BYTES = 200 * 1024 * 1024;
 
+/** read_csv_auto 逃生参数（F2，仅 csv/tsv 生效）：类型推断或日期解析不符合预期时使用 */
+export interface ReadCsvOptions {
+  /** 首行是否为表头 */
+  header?: boolean;
+  /** 日期解析格式，如 "%m/%d/%Y"（混合日期格式整表拒绝时的逃生口） */
+  dateformat?: string;
+  /** 时间戳解析格式 */
+  timestampformat?: string;
+  /** 类型推断采样行数（默认 20480；大文件混型列失败时调大） */
+  sample_size?: number;
+  /** 解析错误行跳过而非整表拒绝 */
+  ignore_errors?: boolean;
+  /** 所有列先按 VARCHAR 读入（完全放弃自动类型推断） */
+  all_varchar?: boolean;
+  /** 行尾列数不足时补齐 NULL */
+  null_padding?: boolean;
+  /** 字段分隔符（覆盖自动嗅探） */
+  delimiter?: string;
+  /** 指定列类型，如 { amount: "VARCHAR" } —— 避免数值列被误判 */
+  types?: Record<string, string>;
+}
+
 /** load-data 参数 */
 const LoadDataParams = Type.Object({
   file_path: Type.String({ description: "数据文件路径（CSV/TSV/Parquet/JSON/Excel）" }),
@@ -52,6 +74,21 @@ const LoadDataParams = Type.Object({
   })),
   sheet_name: Type.Optional(Type.String({
     description: "Excel 工作表名（仅 .xlsx/.xls），省略时取第一个 sheet",
+  })),
+  read_options: Type.Optional(Type.Object({
+    header: Type.Optional(Type.Boolean({ description: "首行是否为表头（默认自动检测）" })),
+    dateformat: Type.Optional(Type.String({ description: "日期解析格式，如 %m/%d/%Y；混合日期被整体拒绝时用它" })),
+    timestampformat: Type.Optional(Type.String({ description: "时间戳解析格式" })),
+    sample_size: Type.Optional(Type.Integer({ description: "类型推断采样行数，默认 20480" })),
+    ignore_errors: Type.Optional(Type.Boolean({ description: "跳过无法解析的行，而非整表拒绝" })),
+    all_varchar: Type.Optional(Type.Boolean({ description: "全部列按 VARCHAR 读入，不做自动类型推断" })),
+    null_padding: Type.Optional(Type.Boolean({ description: "行尾列数不足时补齐 NULL" })),
+    delimiter: Type.Optional(Type.String({ description: "字段分隔符，覆盖自动嗅探" })),
+    types: Type.Optional(Type.Record(Type.String(), Type.String(), {
+      description: "指定列类型，如 { amount: \"VARCHAR\" }",
+    })),
+  }, {
+    description: "read_csv_auto 逃生参数（仅 csv/tsv/Excel 临时 CSV 生效）：类型推断或日期解析失败时使用",
   })),
 });
 
@@ -92,20 +129,46 @@ function readMagicBytes(filePath: string, bytes = 4): Buffer | null {
   }
 }
 
-function buildDuckDBReadSql(filePath: string, format: string): string {
+/** 将 ReadCsvOptions 序列化为 read_csv_auto 的命名参数片段（含转义与类型校验） */
+function formatReadCsvArgs(opts?: ReadCsvOptions): string {
+  if (!opts) return "";
+  const parts: string[] = [];
+  const str = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const add = (name: string, value: string) => parts.push(`${name}=${value}`);
+  if (opts.header !== undefined) add("header", String(opts.header));
+  if (opts.dateformat !== undefined) add("dateformat", str(opts.dateformat));
+  if (opts.timestampformat !== undefined) add("timestampformat", str(opts.timestampformat));
+  if (opts.sample_size !== undefined && Number.isFinite(opts.sample_size)) {
+    add("sample_size", String(Math.max(1, Math.floor(opts.sample_size))));
+  }
+  if (opts.ignore_errors !== undefined) add("ignore_errors", String(opts.ignore_errors));
+  if (opts.all_varchar !== undefined) add("all_varchar", String(opts.all_varchar));
+  if (opts.null_padding !== undefined) add("null_padding", String(opts.null_padding));
+  if (opts.delimiter !== undefined) add("delim", str(opts.delimiter));
+  if (opts.types && Object.keys(opts.types).length > 0) {
+    const entries = Object.entries(opts.types).map(([k, v]) => `${str(k)}: ${str(v)}`).join(", ");
+    add("types", `{${entries}}`);
+  }
+  return parts.length ? `, ${parts.join(", ")}` : "";
+}
+
+function buildDuckDBReadSql(filePath: string, format: string, readOptions?: ReadCsvOptions): string {
   // 转义 SQL 字符串中的单引号
   const safePath = filePath.replace(/'/g, "''");
   switch (format) {
     case "csv":
-      return `read_csv_auto('${safePath}')`;
-    case "tsv":
-      return `read_csv_auto('${safePath}', delim='\t')`;
+      return `read_csv_auto('${safePath}'${formatReadCsvArgs(readOptions)})`;
+    case "tsv": {
+      // 用户显式指定 delimiter 时以其为准，避免与默认 delim='\t' 冲突
+      const delimPart = readOptions?.delimiter !== undefined ? "" : `, delim='\t'`;
+      return `read_csv_auto('${safePath}'${delimPart}${formatReadCsvArgs(readOptions)})`;
+    }
     case "parquet":
       return `read_parquet('${safePath}')`;
     case "json":
       return `read_json_auto('${safePath}')`;
     default:
-      return `read_csv_auto('${safePath}')`;
+      return `read_csv_auto('${safePath}'${formatReadCsvArgs(readOptions)})`;
   }
 }
 
@@ -229,7 +292,12 @@ function readExcelBuffer(filePath: string): Buffer {
  *
  * 格式识别：扩展名优先，magic bytes（PK\x03\x04）兜底。
  */
-function prepareLoadSource(filePath: string, format: string, sheetName?: string): ExcelSource | DirectSource {
+function prepareLoadSource(
+  filePath: string,
+  format: string,
+  sheetName?: string,
+  readOptions?: ReadCsvOptions
+): ExcelSource | DirectSource {
   let effectiveFormat = format;
 
   // magic bytes 兜底：扩展名识别为 csv（含未知扩展名回退）但内容像 xlsx
@@ -243,7 +311,7 @@ function prepareLoadSource(filePath: string, format: string, sheetName?: string)
   if (effectiveFormat === "excel") {
     return prepareExcelSource(filePath, sheetName);
   }
-  return { kind: "direct", readSql: buildDuckDBReadSql(filePath, effectiveFormat) };
+  return { kind: "direct", readSql: buildDuckDBReadSql(filePath, effectiveFormat, readOptions) };
 }
 
 // ============================================================================
@@ -260,6 +328,8 @@ export interface LoadFileOptions {
   format?: string;
   /** Excel 工作表名（仅 Excel），省略时取第一个 sheet */
   sheetName?: string;
+  /** read_csv_auto 逃生参数（仅 csv/tsv/Excel 临时 CSV 生效） */
+  readOptions?: ReadCsvOptions;
 }
 
 /** loadFileIntoTable 钩子（静默字典生成、表卡片起草等） */
@@ -319,10 +389,16 @@ export async function loadFileIntoTable(
   const tableName = options.tableName || deriveTableName(options.filePath);
   const format = detectFormat(options.filePath, options.format);
 
+  // F1: 文件不存在必须先行拦截——否则 readMagicBytes 静默返回 null，
+  // Excel 分支会误报成「文件头校验失败（非 Excel）」
+  if (!existsSync(options.filePath)) {
+    return { ok: false, reason: `文件不存在: ${options.filePath}（请检查路径是否正确）` };
+  }
+
   // 1. 准备源（Excel 解析失败 → 人话 reason，不抛异常）
   let source: ExcelSource | DirectSource;
   try {
-    source = prepareLoadSource(options.filePath, format, options.sheetName);
+    source = prepareLoadSource(options.filePath, format, options.sheetName, options.readOptions);
   } catch (err) {
     if (err instanceof LoadSourceError) {
       return { ok: false, reason: err.message, availableSheets: err.availableSheets };
@@ -333,7 +409,7 @@ export async function loadFileIntoTable(
   const startTime = Date.now();
   const readPath = source.kind === "excel" ? source.csvPath : options.filePath;
   const safeTable = engine.quoteIdentifier(tableName);
-  const loadSql = `CREATE OR REPLACE TABLE ${safeTable} AS SELECT * FROM ${source.kind === "excel" ? buildDuckDBReadSql(source.csvPath, "csv") : source.readSql}`;
+  const loadSql = `CREATE OR REPLACE TABLE ${safeTable} AS SELECT * FROM ${source.kind === "excel" ? buildDuckDBReadSql(source.csvPath, "csv", options.readOptions) : source.readSql}`;
 
   try {
     // 2. 同名表检测（CREATE OR REPLACE 总是覆盖，标记是否发生了替换）
@@ -402,11 +478,19 @@ export function createLoadDataTool(params: ToolRegisterParams): ToolDefinition {
     description:
       "Load a data file (CSV/TSV/Parquet/JSON/Excel) into DuckDB as a queryable table. " +
       "For Excel (.xlsx/.xls), optionally specify sheet_name (defaults to the first sheet). " +
+      "For CSV/TSV, read_options passes DuckDB read_csv_auto escape hatches (dateformat, types, ignore_errors, all_varchar, etc.) " +
+      "when auto-detection misreads header, date format, or column types. " +
       "Returns table overview with row count and column info, plus a data profile card with suggested questions.",
     parameters: LoadDataParams,
     execute: async (
       toolCallId: string,
-      args: { file_path: string; format?: string; table_name?: string; sheet_name?: string },
+      args: {
+        file_path: string;
+        format?: string;
+        table_name?: string;
+        sheet_name?: string;
+        read_options?: ReadCsvOptions;
+      },
       signal: AbortSignal | undefined,
       onUpdate: ((partialResult: AgentToolResult<unknown>) => void) | undefined,
       ctx: ExtensionContext
@@ -425,7 +509,7 @@ export function createLoadDataTool(params: ToolRegisterParams): ToolDefinition {
 
       // 2. 安全检查（路径 + SQL）。SQL 预览用原始路径，仅做模式匹配；
       //    Excel 实际读取的是我们生成的临时 CSV，原始文件路径已在此处过白名单。
-      const sql = `CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM ${buildDuckDBReadSql(args.file_path, format === "excel" ? "csv" : format)}`;
+      const sql = `CREATE OR REPLACE TABLE ${tableName} AS SELECT * FROM ${buildDuckDBReadSql(args.file_path, format === "excel" ? "csv" : format, args.read_options)}`;
       const check = rt.security.checkOperation({ filePath: args.file_path, sql });
       if (check.action === "block") {
         return {
@@ -516,6 +600,7 @@ export function createLoadDataTool(params: ToolRegisterParams): ToolDefinition {
               tableName,
               format: args.format,
               sheetName: args.sheet_name,
+              readOptions: args.read_options,
             },
             {
               dataDictionary: rt.dataDictionary,

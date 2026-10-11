@@ -118,7 +118,7 @@ export function formatWelcomeMessage(result: EnvCheckResult): string[] {
 
   // 示例问句 + 命令提示
   lines.push(`试试：「加载 data.csv 看看有什么」·「按渠道统计销售额并画图」·「导出查询结果」`);
-  lines.push(`命令：/dashboard 打开控制台 · /report executive|detailed 生成正式报告`);
+  lines.push(`命令：/dashboard 打开控制台 · /report executive|detailed 生成正式报告 · 反馈：github.com/long1973m/pi-agent/issues`);
 
   return lines;
 }

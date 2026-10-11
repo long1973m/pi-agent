@@ -114,6 +114,11 @@ export class SecurityChecker {
     return this.config.dbQueryTimeoutMs;
   }
 
+  /** v0.14 RM-1: 单次远程表物化行数硬熔断（materialize_remote_table 熔断判定用） */
+  get dbMaxMaterializeRows(): number {
+    return this.config.dbMaxMaterializeRows;
+  }
+
   // ==========================================================================
   // 路径检查
   // ==========================================================================
