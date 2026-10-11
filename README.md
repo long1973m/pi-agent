@@ -1,6 +1,48 @@
-# Pi Agent 项目结构指南
+# Pi Data Agent Extension
 
-> 本文件是项目文件夹的归置约定。生成新文件时，按下方规则放入对应目录。
+> 让 Pi 变成能直接干活的**数据分析智能体**：从数据接入、SQL 查询、可视化到报告交付，一个对话窗口说完，全程本地运行、口径可控。
+
+[![npm version](https://img.shields.io/npm/v/pi-data-agent-extension)](https://www.npmjs.com/package/pi-data-agent-extension) [![pi.dev](https://img.shields.io/badge/pi.dev-package-2b6cb0)](https://pi.dev/packages/pi-data-agent-extension)
+
+## 它解决什么问题
+
+做数据分析最累的不是写 SQL，而是工具链割裂：取数、查询、画图、汇报分散在四个地方，口径散落、上下文反复搬运；把问题丢给通用 AI，又常得到一个"看起来对"的编造结果。
+
+这个扩展把全流程收进 Pi 的一个对话窗口，并用三层机制保证结果可信：
+
+- **本地 DuckDB 引擎** —— 数据不出机器，百万行直查
+- **数据字典 / 指标口径 / 查询记忆** —— 口径确认一次，之后所有查询沿用，不让模型猜
+- **确定性统计** —— 漏斗、留存、A/B 检验由代码精确计算，模型只负责解释、不负责算
+
+## 核心能力
+
+| 能力 | 说明 |
+|------|------|
+| 数据接入 | CSV / Excel 拖进对话即建表；MySQL 只读远程、SQLite 文件经白名单 ATTACH 直查 |
+| 自然语言 → SQL | 错误自修复、查询记忆、模糊需求主动澄清 |
+| 可视化 | bar / line / scatter / histogram / pie / box / heatmap 七类统计图 |
+| 报告 | 会话报告 + 正式分析报告（离线 HTML 单文件，带证据覆盖度质量门） |
+| Dashboard | 本地 Web 控制台：报告库、图表中心、远程表物化副本、字典与口径管理 |
+| 分析模板 | 漏斗 / 留存 cohort / A/B 检验一键跑，统计确定性计算，结果自带方法与局限 |
+| 安全模型 | 路径白名单、SQL 黑名单分类、写操作 fail-closed 确认门 |
+
+## 快速开始
+
+```bash
+pi install npm:pi-data-agent-extension
+```
+
+装完在 Pi 里说一句「加载 xx.csv 看看有什么」就开始了。绘图功能需 Python 环境：`pip install -r pi-data-agent-extension/requirements.txt`。
+
+- 包页面：[npm](https://www.npmjs.com/package/pi-data-agent-extension) · [pi.dev 目录](https://pi.dev/packages/pi-data-agent-extension)
+- 扩展完整文档：[pi-data-agent-extension/README.md](./pi-data-agent-extension/README.md)
+- 问题与建议：[GitHub Issues](https://github.com/long1973m/pi-agent/issues)
+
+---
+
+## 项目文件结构（维护者约定）
+
+> 本文件同时是项目文件夹的归置约定。生成新文件时，按下方规则放入对应目录。
 
 ---
 
